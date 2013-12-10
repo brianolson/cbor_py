@@ -14,7 +14,7 @@ CBOR_TEXT    = 0x60
 CBOR_ARRAY   = 0x80
 CBOR_MAP     = 0xA0
 CBOR_TAG     = 0xC0
-CBOR_7       = 0xE0  /* float and other types */
+CBOR_7       = 0xE0  # float and other types
 
 CBOR_UINT8_FOLLOWS  = 24
 CBOR_UINT16_FOLLOWS = 25
@@ -53,14 +53,14 @@ def dumps_int(val):
 
 
 def dumps_float(val):
-    returs struct.pack("!Bd", CBOR_FLOAT64, val)
+    return struct.pack("!Bd", CBOR_FLOAT64, val)
 
 
-def _encode_type_num(cbor_type, number):
+def _encode_type_num(cbor_type, val):
     """For some CBOR primary type [0..7] and an auxiliary unsigned number, return CBOR encoded bytes"""
-    assert number >= 0
+    assert val >= 0
     if val <= 23:
-        return struct.pack('B', cbor_type | number)
+        return struct.pack('B', cbor_type | val)
     if val <= 0x0ff:
         return struct.pack('BB', cbor_type | CBOR_UINT8_FOLLOWS, val)
     if val <= 0x0ffff:
@@ -69,7 +69,7 @@ def _encode_type_num(cbor_type, number):
         return struct.pack('!BI', cbor_type | CBOR_UINT32_FOLLOWS, val)
     if val <= 0x0ffffffffffffffff:
         return struct.pack('!BQ', cbor_type | CBOR_UINT64_FOLLOWS, val)
-    raise Exception("value too big for CBOR unsigned number: {0!r}".format(number))
+    raise Exception("value too big for CBOR unsigned number: {0!r}".format(val))
 
 
 def dumps_string(val, is_text=None, is_bytes=None):
@@ -115,7 +115,9 @@ def dumps(ob):
     if isinstance(ob, dict):
         return dumps_dict(ob)
     if isinstance(ob, float):
-        return dumsp_float(ob)
+        return dumps_float(ob)
+    if isinstance(ob, (int, long)):
+        return dumps_int(ob)
     raise Exception("don't know how to cbor serialize object of type %s", type(ob))
 
 
@@ -124,6 +126,31 @@ def loads(data):
 
 
 _MAX_DEPTH = 100
+
+
+def _tag_aux(data, offset, tb):
+    bytes_read = 1
+    tag = tb & CBOR_TYPE_MASK
+    tag_aux = tb & CBOR_INFO_BITS
+    if tag_aux <= 23:
+        aux = tag_aux
+    elif tag_aux == CBOR_UINT8_FOLLOWS:
+        aux = struct.unpack_from("!B", data, offset + 1)[0]
+        bytes_read += 1
+    elif tag_aux == CBOR_UINT16_FOLLOWS:
+        aux = struct.unpack_from("!H", data, offset + 1)[0]
+        bytes_read += 2
+    elif tag_aux == CBOR_UINT32_FOLLOWS:
+        aux = struct.unpack_from("!I", data, offset + 1)[0]
+        bytes_read += 4
+    elif tag_aux == CBOR_UINT64_FOLLOWS:
+        aux = struct.unpack_from("!Q", data, offset + 1)[0]
+        bytes_read += 8
+    else:
+        assert tag_aux == CBOR_VAR_FOLLOWS
+        aux = None
+
+    return tag, tag_aux, aux, bytes_read
 
 
 def _loads(data, offset=0, limit=None, depth=0):
@@ -143,39 +170,18 @@ def _loads(data, offset=0, limit=None, depth=0):
         pf = struct.unpack_from("!d", data, offset + 1)
         return (pf[0], 9)
 
-    bytes_read = 1
-    tag = tb & CBOR_TYPE_MASK
-    tag_aux = tb & CBOR_INFO_BITS
-    if tag_aux <= 23:
-        aux = tag_aux
-    elif tag_aux == CBOR_UINT8_FOLLOWS:
-        aux = struct.unpack_from("!B", data, offset + 1)
-        bytes_read += 1
-    elif tag_aux == CBOR_UINT16_FOLLOWS:
-        aux = struct.unpack_from("!H", data, offset + 1)
-        bytes_read += 2
-    elif tag_aux == CBOR_UINT32_FOLLOWS:
-        aux = struct.unpack_from("!I", data, offset + 1)
-        bytes_read += 4
-    elif tag_aux == CBOR_UINT64_FOLLOWS:
-        aux = struct.unpack_from("!Q", data, offset + 1)
-        bytes_read += 8
-    else:
-        aux = None
+    tag, tag_aux, aux, bytes_read = _tag_aux(data, offset, tb)
 
     if tag == CBOR_UINT:
         return (aux, bytes_read)
     elif tag == CBOR_NEGINT:
         return (-1 - aux, bytes_read)
     elif tag == CBOR_BYTES:
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
-        ob = data[offset + bytes_read:offset + bytes_read + aux]
-        return (ob, bytes_read + aux)
+        return loads_bytes(data, offset + bytes_read, aux)
     elif tag == CBOR_TEXT:
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
-        raw = data[offset + bytes_read:offset + bytes_read + aux]
+        raw, bytes_read = loads_bytes(data, offset + bytes_read, aux, btag=CBOR_TEXT)
         ob = raw.decode('utf8')
-        return (ob, bytes_read + aux)
+        return (ob, bytes_read)
     elif tag == CBOR_ARRAY:
         # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
         ob = []
@@ -199,7 +205,7 @@ def _loads(data, offset=0, limit=None, depth=0):
         ob, subpos = _loads(data, offset + bytes_read)
         bytes_read += subpos
         return ob, bytes_read
-    elif tag = CBOR_7:
+    elif tag == CBOR_7:
         if tb == CBOR_TRUE:
             return (True, bytes_read)
         if tb == CBOR_FALSE:
@@ -208,3 +214,26 @@ def _loads(data, offset=0, limit=None, depth=0):
             return (None, bytes_read)
         if tb == CBOR_UNDEFINED:
             return (None, bytes_read)
+        raise Exception("unknown cbor tag 7 byte: %02x", tb)
+
+
+def loads_bytes(data, offset, aux, btag=CBOR_BYTES):
+    # TODO: limit to some maximum number of chunks and some maximum total bytes
+    if aux is not None:
+        # simple case
+        ob = data[offset:offset + aux]
+        return (ob, aux)
+    # read chunks of bytes
+    chunklist = []
+    total_bytes_read = 0
+    while True:
+        tb = data[offset + total_bytes_read]
+        if tb == CBOR_BREAK:
+            total_bytes_read += 1
+            break
+        tag, tag_aux, aux, bytes_read = _tag_aux(data, offset + total_bytes_read, tb)
+        assert tag == btag, 'variable length value contains unexpected component'
+        ob = data[offset + total_bytes_read + bytes_read:offset + total_bytes_read + bytes_read + aux]
+        chunklist.append(ob)
+        total_bytes_read += bytes_read + aux
+    return (b''.join(chunklist), total_bytes_read)
