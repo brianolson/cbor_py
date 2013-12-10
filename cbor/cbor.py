@@ -1,6 +1,8 @@
 #!python
 # -*- Python -*-
 
+import datetime
+import re
 import struct
 
 CBOR_TYPE_MASK = 0xE0  # top 3 bits
@@ -33,6 +35,24 @@ CBOR_FLOAT16 = (CBOR_7 | 25)
 CBOR_FLOAT32 = (CBOR_7 | 26)
 CBOR_FLOAT64 = (CBOR_7 | 27)
 
+CBOR_TAG_DATE_STRING = 0 # RFC3339
+CBOR_TAG_DATE_ARRAY = 1 # any number type follows, seconds since 1970-01-01T00:00:00 UTC
+CBOR_TAG_BIGNUM = 2 # big endian byte string follows
+CBOR_TAG_NEGBIGNUM = 3 # big endian byte string follows
+CBOR_TAG_DECIMAL = 4 # [ 10^x exponent, number ]
+CBOR_TAG_BIGFLOAT = 5 # [ 2^x exponent, number ]
+CBOR_TAG_BASE64URL = 21
+CBOR_TAG_BASE64 = 22
+CBOR_TAG_BASE16 = 23
+CBOR_TAG_CBOR = 24 # following byte string is embedded CBOR data
+
+CBOR_TAG_URI = 32
+CBOR_TAG_BASE64URL = 33
+CBOR_TAG_BASE64 = 34
+CBOR_TAG_REGEX = 35
+CBOR_TAG_MIME = 36 # following text is MIME message, headers, separators and all
+CBOR_TAG_CBOR_FILEHEADER = 55799 # can open a file with 0xd9d9f7
+
 def dumps_int(val):
     "return bytes representing int val in CBOR"
     if val >= 0:
@@ -47,9 +67,19 @@ def dumps_int(val):
             return struct.pack('!BI', CBOR_UINT32_FOLLOWS, val)
         if val <= 0x0ffffffffffffffff:
             return struct.pack('!BQ', CBOR_UINT64_FOLLOWS, val)
-        raise Exception('TODO: pack bignum')
+        outb = _dumps_bignum_to_bytearray(val)
+        outa = [chr(CBOR_TAG | CBOR_TAG_BIGNUM), _encode_type_num(CBOR_BYTES, len(outb))] + outb
+        return b''.join(outa)
     val = -1 - val
     return _encode_type_num(CBOR_NEGINT, val)
+
+
+def _dumps_bignum_to_bytearray(val):
+    out = []
+    while val > 0:
+        out.insert(0, chr(val & 0x0ff))
+        val = val >> 8
+    return out
 
 
 def dumps_float(val):
@@ -69,7 +99,11 @@ def _encode_type_num(cbor_type, val):
         return struct.pack('!BI', cbor_type | CBOR_UINT32_FOLLOWS, val)
     if val <= 0x0ffffffffffffffff:
         return struct.pack('!BQ', cbor_type | CBOR_UINT64_FOLLOWS, val)
-    raise Exception("value too big for CBOR unsigned number: {0!r}".format(val))
+    if cbor_type != CBOR_NEGINT:
+        raise Exception("value too big for CBOR unsigned number: {0!r}".format(val))
+    outb = _dumps_bignum_to_bytearray(val)
+    outa = [chr(CBOR_TAG | CBOR_TAG_NEGBIGNUM), _encode_type_num(CBOR_BYTES, len(outb))] + outb
+    return b''.join(outa)
 
 
 def dumps_string(val, is_text=None, is_bytes=None):
@@ -121,6 +155,12 @@ def dumps(ob):
     raise Exception("don't know how to cbor serialize object of type %s", type(ob))
 
 
+class Tag(object):
+    def __init__(self, tag, value):
+        self.tag = tag
+        self.value = value
+
+
 def loads(data):
     return _loads(data)[0]
 
@@ -147,13 +187,13 @@ def _tag_aux(data, offset, tb):
         aux = struct.unpack_from("!Q", data, offset + 1)[0]
         bytes_read += 8
     else:
-        assert tag_aux == CBOR_VAR_FOLLOWS
+        assert tag_aux == CBOR_VAR_FOLLOWS, "bogus tag {0:02x}".format(tb)
         aux = None
 
     return tag, tag_aux, aux, bytes_read
 
 
-def _loads(data, offset=0, limit=None, depth=0):
+def _loads(data, offset=0, limit=None, depth=0, returntags=False):
     "return (object, bytes read)"
     if depth > _MAX_DEPTH:
         raise Exception("hit CBOR loads recursion depth limit")
@@ -177,11 +217,12 @@ def _loads(data, offset=0, limit=None, depth=0):
     elif tag == CBOR_NEGINT:
         return (-1 - aux, bytes_read)
     elif tag == CBOR_BYTES:
-        return loads_bytes(data, offset + bytes_read, aux)
+        ob, subpos = loads_bytes(data, offset + bytes_read, aux)
+        return (ob, bytes_read + subpos)
     elif tag == CBOR_TEXT:
-        raw, bytes_read = loads_bytes(data, offset + bytes_read, aux, btag=CBOR_TEXT)
+        raw, subpos = loads_bytes(data, offset + bytes_read, aux, btag=CBOR_TEXT)
         ob = raw.decode('utf8')
-        return (ob, bytes_read)
+        return (ob, bytes_read + subpos)
     elif tag == CBOR_ARRAY:
         # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
         ob = []
@@ -201,9 +242,14 @@ def _loads(data, offset=0, limit=None, depth=0):
             ob[subk] = subv
         return ob, bytes_read
     elif tag == CBOR_TAG:
-        # TODO: do something intelligent with the _next_ object
         ob, subpos = _loads(data, offset + bytes_read)
         bytes_read += subpos
+        if returntags:
+            # Don't interpret the tag, return it and the tagged object.
+            ob = Tag(aux, ob)
+        else:
+            # attempt to interpet the tag and the value into a Python object.
+            ob = tagify(ob, aux)
         return ob, bytes_read
     elif tag == CBOR_7:
         if tb == CBOR_TRUE:
@@ -237,3 +283,27 @@ def loads_bytes(data, offset, aux, btag=CBOR_BYTES):
         chunklist.append(ob)
         total_bytes_read += bytes_read + aux
     return (b''.join(chunklist), total_bytes_read)
+
+
+def _bytes_to_biguint(bs):
+    out = 0
+    for ch in bs:
+        out = out << 8
+        out = out | ord(ch)
+    return out
+
+
+def tagify(ob, aux):
+    if aux == CBOR_TAG_DATE_STRING:
+        # TODO: parse RFC3339 date string
+        pass
+    if aux == CBOR_TAG_DATE_ARRAY:
+        return datetime.datetime.utcfromtimestamp(ob)
+    if aux == CBOR_TAG_BIGNUM:
+        return _bytes_to_biguint(ob)
+    if aux == CBOR_TAG_NEGBIGNUM:
+        return -1 - _bytes_to_biguint(ob)
+    if aux == CBOR_TAG_REGEX:
+        # Is this actually a good idea? Should we just return the tag and the raw value to the user somehow?
+        return re.compile(ob)
+    return ob
