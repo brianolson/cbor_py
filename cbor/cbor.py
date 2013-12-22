@@ -97,7 +97,8 @@ def _encode_type_num(cbor_type, val):
         return struct.pack('!BH', cbor_type | CBOR_UINT16_FOLLOWS, val)
     if val <= 0x0ffffffff:
         return struct.pack('!BI', cbor_type | CBOR_UINT32_FOLLOWS, val)
-    if val <= 0x0ffffffffffffffff:
+    if (((cbor_type == CBOR_NEGINT) and (val <= 0x07fffffffffffffff)) or
+        ((cbor_type != CBOR_NEGINT) and (val <= 0x0ffffffffffffffff))):
         return struct.pack('!BQ', cbor_type | CBOR_UINT64_FOLLOWS, val)
     if cbor_type != CBOR_NEGINT:
         raise Exception("value too big for CBOR unsigned number: {0!r}".format(val))

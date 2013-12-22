@@ -1,6 +1,7 @@
 #!python
 # -*- coding: utf-8 -*-
 
+import base64
 import json
 import random
 import sys
@@ -8,13 +9,18 @@ import time
 import unittest
 import zlib
 
-from cbor import dumps, loads
+# TODO: make this test file parameterized on testing {python,c}{loads,dumps} in all four combinations
+
+#from cbor import dumps, loads
+from cbor import dumps
+from cbor._cbor import loads
 
 
 class TestCBOR(unittest.TestCase):
     def _oso(self, ob):
-        o2 = loads(dumps(ob))
-        assert ob == o2
+        ser = dumps(ob)
+        o2 = loads(ser)
+        assert ob == o2, '%r != %r from %s' % (ob, o2, base64.b16encode(ser))
 
     def _osos(self, ob):
         obs = dumps(ob)
@@ -46,9 +52,11 @@ class TestCBOR(unittest.TestCase):
         for i in xrange(10000):
             v = random.randint(-1000000000, 1000000000)
             self._oso(v)
+        oldv = []
         for i in xrange(1000):
             v = random.randint(-1000000000000000000000, 1000000000000000000000)
             self._oso(v)
+            oldv.append(v)
 
     def test_randobs(self):
         for i in xrange(10000):
@@ -61,29 +69,29 @@ class TestCBOR(unittest.TestCase):
         st = time.time()
         bsers = [dumps(o) for o in obs]
         nt = time.time()
-        bson_ser_time = nt - st
+        cbor_ser_time = nt - st
         jsers = [json.dumps(o) for o in obs]
         jt = time.time()
         json_ser_time = jt - nt
-        sys.stderr.write('serialized {0} objects into {1} bson bytes in {2:.2f} seconds and {3} json bytes in {4:.2f} seconds\n'.format(
+        sys.stderr.write('serialized {0} objects into {1} cbor bytes in {2:.2f} seconds and {3} json bytes in {4:.2f} seconds\n'.format(
             len(obs),
-            sum(map(len, bsers)), bson_ser_time,
+            sum(map(len, bsers)), cbor_ser_time,
             sum(map(len, jsers)), json_ser_time))
         bsersz = zlib.compress(b''.join(bsers))
         jsersz = zlib.compress(b''.join(jsers))
-        sys.stderr.write('compress to {0} bytes bson.gz and {1} bytes json.gz\n'.format(
+        sys.stderr.write('compress to {0} bytes cbor.gz and {1} bytes json.gz\n'.format(
             len(bsersz), len(jsersz)))
 
         st = time.time()
         bo2 = [loads(b) for b in bsers]
         bt = time.time()
-        bson_load_time = bt - st
+        cbor_load_time = bt - st
         jo2 = [json.loads(b) for b in jsers]
         jt = time.time()
         json_load_time = jt - bt
-        sys.stderr.write('load {0} objects from bson in {1:.2f} secs and json in {2:.2f}\n'.format(
+        sys.stderr.write('load {0} objects from cbor in {1:.2f} secs and json in {2:.2f}\n'.format(
             len(obs),
-            bson_load_time,
+            cbor_load_time,
             json_load_time))
 
     # def test_concat():
