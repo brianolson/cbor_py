@@ -12,7 +12,7 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp) {
     uint8_t cbor_type = c & CBOR_TYPE_MASK;
     uint8_t cbor_info = c & CBOR_INFO_BITS;
     uint64_t aux;
-    if (aux <= 23) {
+    if (cbor_info <= 23) {
 	// literal value <=23
 	aux = cbor_info;
 	pos += 1;
@@ -67,69 +67,65 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp) {
 	    raw[pos + 4];
 	pos += 5;
     } else if (cbor_info == CBOR_UINT64_FOLLOWS) {
-	aux = 
-	    (raw[pos + 1] << 56) |
-	    (raw[pos + 2] << 48) |
-	    (raw[pos + 3] << 40) |
-	    (raw[pos + 4] << 32) |
-	    (raw[pos + 5] << 24) |
-	    (raw[pos + 6] << 16) |
-	    (raw[pos + 7] <<  8) |
-	    raw[pos + 8];
+	aux = 0;
+	for (int si = 1; si <= 8; si++) {
+	    aux = aux << 8;
+	    aux |= raw[pos + si];
+	}
 	pos += 9;
     } else {
 	// raise Exception("bogus tag info number")
 	aux = 0;
     }
     PyObject* out = NULL;
-    swich (cbor_type) {
-	case CBOR_UINT:
-	    out = PyLong_FromLong(aux);
-	    break;
-	case CBOR_NEGINT:
-	    out = PyLong_FromLong(-1 - aux);
-	    break;
-	case CBOR_BYTES:
-	    if (cbor_info == CBOR_VAR_FOLLOWS) {
-	        // TODO: WRITEME
-   	        assert(0);
-	    } else {
-	        out = PyBytes_FromStringAndSize(raw + pos, aux);
-		pos += aux;
-	    }
-	    break;
-	case CBOR_TEXT:
-	    if (cbor_info == CBOR_VAR_FOLLOWS) {
-	        // TODO: WRITEME
-   	        assert(0);
-	    } else {
-	        out = PyUnicode_FromStringAndSize(raw + pos, aux);
-		pos += aux;
-	    }
-	    break;
-	case CBOR_ARRAY:
+    switch (cbor_type) {
+    case CBOR_UINT:
+	out = PyLong_FromLong((long)aux);
+	break;
+    case CBOR_NEGINT:
+	out = PyLong_FromLong((long)(-1 - aux));
+	break;
+    case CBOR_BYTES:
+	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    // TODO: WRITEME
 	    assert(0);
-	    if (cbor_info == CBOR_VAR_FOLLOWS) {
+	} else {
+	    out = PyBytes_FromStringAndSize((char*)(raw + pos), (Py_ssize_t)aux);
+	    pos += aux;
+	}
+	break;
+    case CBOR_TEXT:
+	if (cbor_info == CBOR_VAR_FOLLOWS) {
+	    // TODO: WRITEME
+	    assert(0);
+	} else {
+	    out = PyUnicode_FromStringAndSize((char*)(raw + pos), (Py_ssize_t)aux);
+	    pos += aux;
+	}
+	break;
+    case CBOR_ARRAY:
+	// TODO: WRITEME
+	assert(0);
+	if (cbor_info == CBOR_VAR_FOLLOWS) {
 
-	    } else {
-	    }
-	    break;
-	case CBOR_MAP:
-	    // TODO: WRITEME
-	    assert(0);
-	    if (cbor_info == CBOR_VAR_FOLLOWS) {
+	} else {
+	}
+	break;
+    case CBOR_MAP:
+	// TODO: WRITEME
+	assert(0);
+	if (cbor_info == CBOR_VAR_FOLLOWS) {
 
-	    } else {
-	    }
-	    break;
-	case CBOR_TAG:
-	    // TODO: WRITEME
-	    // return an object CBORTag(tagnum, nextob)
-	    assert(0);
-	    break;
-	case CBOR_7:
-	    if (aux == 20) {
+	} else {
+	}
+	break;
+    case CBOR_TAG:
+	// TODO: WRITEME
+	// return an object CBORTag(tagnum, nextob)
+	assert(0);
+	break;
+    case CBOR_7:
+	if (aux == 20) {
 	    out = Py_False;
 	    Py_INCREF(out);
 	} else if (aux == 21) {
@@ -139,12 +135,12 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp) {
 	    out = Py_None;
 	    Py_INCREF(out);
 	}
-	    break;
-	default:
-	    // raise Exception("bogus cbor tag: %x")
-	}
+	break;
+    default:
+	break;
+	// raise Exception("bogus cbor tag: %x")
     }
-    *ppos = pos;
+    *posp = pos;
     return out;
 }
 
