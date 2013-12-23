@@ -1,4 +1,1 @@
-from cbor._cbor import loads
-from .cbor import dumps
-
-
+from cbor._cbor import loads, dumps
