@@ -1,8 +1,7 @@
 #!python
 
 try:
-    import cbor._cbor as cborlib
-    from .cborfast import loads, dumps
+    from ._cbor import loads, dumps
 except:
     from .cbor import loads, dumps
 

@@ -81,7 +81,7 @@ class XTestCBOR(object):
             v = random.randint(-1000000000, 1000000000)
             self._oso(v)
         oldv = []
-        for i in xrange(icount / 10):
+        for i in xrange(int(icount / 10)):
             v = random.randint(-1000000000000000000000, 1000000000000000000000)
             self._oso(v)
             oldv.append(v)

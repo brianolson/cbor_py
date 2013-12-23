@@ -184,7 +184,7 @@ static PyObject* loads_bignum(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 
     uint8_t bytes_info = raw[pos] & CBOR_INFO_BITS;
     if (bytes_info < 24) {
-	PyObject* eight = PyInt_FromLong(8);
+	PyObject* eight = PyLong_FromLong(8);
 	out = PyLong_FromLong(0);
 	pos++;
 	for (int i = 0; i < bytes_info; i++) {
@@ -193,7 +193,7 @@ static PyObject* loads_bignum(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	    PyObject* tout = PyNumber_Lshift(out, eight);
 	    Py_DECREF(out);
 	    out = tout;
-	    curbyte = PyInt_FromLong(raw[pos]);
+	    curbyte = PyLong_FromLong(raw[pos]);
 	    tout = PyNumber_Or(out, curbyte);
 	    Py_DECREF(curbyte);
 	    Py_DECREF(out);
@@ -258,7 +258,8 @@ static PyObject* loads_tag(uint8_t* raw, uintptr_t* posp, Py_ssize_t len, uint64
 	PyObject* moddict = PyModule_GetDict(cbor_module);
 	PyObject* tag_class = PyDict_GetItemString(moddict, "Tag");
 	PyObject* args = Py_BuildValue("(K,o)", aux, out);
-	PyObject* tout = PyInstance_New(tag_class, args, Py_None);
+	//PyObject* tout = PyInstance_New(tag_class, args, Py_None);
+	PyObject* tout = PyType_GenericNew((PyTypeObject*)tag_class, args, Py_None);
 	Py_DECREF(out);
 	Py_DECREF(args);
 	Py_DECREF(tag_class);
@@ -279,10 +280,7 @@ cbor_loads(PyObject* noself, PyObject* args) {
     } else if (PyType_IsSubtype(Py_TYPE(args), &PyTuple_Type)) {
 	ob = PyTuple_GetItem(args, 0);
     } else {
-	PyObject* repr = PyObject_Repr(args);
-	PyErr_Format(PyExc_ValueError, "args not list or tuple: %s\n",
-		PyString_AsString(repr));
-	Py_DECREF(repr);
+	PyErr_Format(PyExc_ValueError, "args not list or tuple: %R\n", args);
 	return NULL;
     }
 
@@ -391,7 +389,7 @@ static int dumps_dict(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 
 static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = (posp != NULL) ? *posp : 0;
-    PyObject* eight = PyInt_FromLong(8);
+    PyObject* eight = PyLong_FromLong(8);
     PyObject* bytemask = NULL;
     uint8_t* revbytes = NULL;
     int revbytepos = 0;
@@ -464,6 +462,9 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	    int err = inner_dumps(PyTuple_GetItem(ob, i), out, &pos);
 	    if (err != 0) { return err; }
 	}
+	// TODO: accept other enumerables and emit a variable length array
+#ifdef Py_INTOBJECT_H
+	// PyInt exists in Python 2 but not 3
     } else if (PyInt_Check(ob)) {
 	long val = PyInt_AsLong(ob);
 	if (val >= 0) {
@@ -471,6 +472,7 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	} else {
 	    tag_aux_out(CBOR_NEGINT, -1 - val, out, &pos);
 	}
+#endif
     } else if (PyLong_Check(ob)) {
 	int overflow = 0;
 	long long val = PyLong_AsLongLongAndOverflow(ob, &overflow);
@@ -478,7 +480,7 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	    if (val >= 0) {
 		tag_aux_out(CBOR_UINT, val, out, &pos);
 	    } else {
-		tag_aux_out(CBOR_NEGINT, val, out, &pos);
+		tag_aux_out(CBOR_NEGINT, -1L - val, out, &pos);
 	    }
 	} else {
 	    if (overflow < 0) {
@@ -513,9 +515,7 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	pos += len;
 	Py_DECREF(utf8);
     } else {
-	PyObject* repr = PyObject_Repr(ob);
-	PyErr_Format(PyExc_ValueError, "cannot serialize unknown object: %s", PyString_AsString(repr));
-	Py_DECREF(repr);
+	PyErr_Format(PyExc_ValueError, "cannot serialize unknown object: %R", ob);
 	return -1;
     }
     if (posp != NULL) {
@@ -532,10 +532,7 @@ cbor_dumps(PyObject* noself, PyObject* args) {
     } else if (PyType_IsSubtype(Py_TYPE(args), &PyTuple_Type)) {
 	ob = PyTuple_GetItem(args, 0);
     } else {
-	PyObject* repr = PyObject_Repr(args);
-	PyErr_Format(PyExc_ValueError, "args not list or tuple: %s\n",
-		PyString_AsString(repr));
-	Py_DECREF(repr);
+	PyErr_Format(PyExc_ValueError, "args not list or tuple: %R\n", args);
 	return NULL;
     }
 
@@ -582,11 +579,31 @@ static PyMethodDef CborMethods[] = {
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
+#ifdef Py_InitModule
+// Python 2.7
 PyMODINIT_FUNC
 init_cbor(void)
 {
     (void) Py_InitModule("cbor._cbor", CborMethods);
 }
-
-
+#else
+// Python 3
+PyMODINIT_FUNC
+PyInit__cbor(void)
+{
+    static PyModuleDef modef = {
+	PyModuleDef_HEAD_INIT,
+    };
+    //modef.m_base = PyModuleDef_HEAD_INIT;
+    modef.m_name = "cbor._cbor";
+    modef.m_doc = NULL;
+    modef.m_size = 0;
+    modef.m_methods = CborMethods;
+    modef.m_reload = NULL;
+    modef.m_traverse = NULL;
+    modef.m_clear = NULL;
+    modef.m_free = NULL;
+    return PyModule_Create(&modef);
+}
+#endif
 

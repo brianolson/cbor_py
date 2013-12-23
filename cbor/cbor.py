@@ -58,7 +58,7 @@ def dumps_int(val):
     if val >= 0:
         # CBOR_UINT is 0, so I'm lazy/efficient about not OR-ing it in.
         if val <= 23:
-            return bytes(chr(val))
+            return struct.pack('B', val)
         if val <= 0x0ff:
             return struct.pack('BB', CBOR_UINT8_FOLLOWS, val)
         if val <= 0x0ffff:
@@ -147,6 +147,7 @@ def dumps(ob):
         return dumps_string(ob)
     if isinstance(ob, (list, tuple)):
         return dumps_array(ob)
+    # TODO: accept other enumerables and emit a variable length array
     if isinstance(ob, dict):
         return dumps_dict(ob)
     if isinstance(ob, float):
@@ -201,7 +202,7 @@ def _loads(data, offset=0, limit=None, depth=0, returntags=False):
     if depth > _MAX_DEPTH:
         raise Exception("hit CBOR loads recursion depth limit")
 
-    tb = ord(data[offset])
+    tb = struct.unpack_from("B", data, offset)[0]
 
     # Some special cases of CBOR_7 best handled by special struct.unpack logic here
     if tb == CBOR_FLOAT16:
