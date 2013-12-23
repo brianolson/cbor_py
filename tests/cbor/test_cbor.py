@@ -12,7 +12,9 @@ import zlib
 # TODO: make this test file parameterized on testing {python,c}{loads,dumps} in all four combinations
 
 #from cbor import dumps, loads
-from cbor import dumps
+#from cbor import dumps
+#from cbor import loads
+from cbor._cbor import dumps
 from cbor._cbor import loads
 
 
@@ -65,7 +67,7 @@ class TestCBOR(unittest.TestCase):
 
     def test_speed_vs_json(self):
         # It should be noted that the python standard library has a C implementation of key parts of json encoding and decoding
-        obs = [_randob() for x in xrange(10000)]
+        obs = [_randob() for x in xrange(50000)]
         st = time.time()
         bsers = [dumps(o) for o in obs]
         nt = time.time()
