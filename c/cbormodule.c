@@ -286,10 +286,23 @@ cbor_loads(PyObject* noself, PyObject* args) {
 	return NULL;
     }
 
+    if (ob == Py_None) {
+	PyErr_SetString(PyExc_ValueError, "got None for buffer to decode in loads");
+	return NULL;
+    }
+
     {
 	uint8_t* raw = (uint8_t*)PyBytes_AsString(ob);
 	Py_ssize_t len = PyBytes_Size(ob);
 	uintptr_t pos = 0;
+	if (len == 0) {
+	    PyErr_SetString(PyExc_ValueError, "got zero length string in loads");
+	    return NULL;
+	}
+	if (raw == NULL) {
+	    PyErr_SetString(PyExc_ValueError, "got NULL buffer for string");
+	    return NULL;
+	}
 	return inner_loads(raw, &pos, len);
     }
 }

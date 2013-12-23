@@ -163,6 +163,8 @@ class Tag(object):
 
 
 def loads(data):
+    if data is None:
+        raise ValueError("got None for buffer to decode in loads")
     return _loads(data)[0]
 
 
