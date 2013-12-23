@@ -5,7 +5,7 @@
 #include <math.h>
 #include <stdint.h>
 
-#include <stdio.h>
+//#include <stdio.h>
 
 static PyObject* loads_tag(uint8_t* raw, uintptr_t* posp, Py_ssize_t len, uint64_t aux);
 
@@ -17,11 +17,8 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
     uint8_t cbor_info = c & CBOR_INFO_BITS;
     uint64_t aux;
 
-    //fprintf(stderr, "inner_loads(%p, %lu, %ld) type=%d info=%d\n", raw, pos, len, cbor_type >> 5, cbor_info);
-
     if (pos > len) {
 	PyErr_SetString(PyExc_ValueError, "misparse, token went longer than buffer");
-	fprintf(stderr, "ERROR raise Exception(\"misparse, token went longer than buffer\")\n");
 	return NULL;
     }
 
@@ -103,8 +100,8 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	break;
     case CBOR_BYTES:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    fprintf(stderr, "TODO: WRITEME CBOR VAR BYTES\n");
-	    assert(0);
+	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR BYTES\n");
+	    return NULL;
 	} else {
 	    out = PyBytes_FromStringAndSize((char*)(raw + pos), (Py_ssize_t)aux);
 	    pos += aux;
@@ -112,8 +109,8 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	break;
     case CBOR_TEXT:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    fprintf(stderr, "TODO: WRITEME CBOR VAR TEXT\n");
-	    assert(0);
+	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR TEXT\n");
+	    return NULL;
 	} else {
 	    out = PyUnicode_FromStringAndSize((char*)(raw + pos), (Py_ssize_t)aux);
 	    pos += aux;
@@ -121,13 +118,14 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	break;
     case CBOR_ARRAY:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    fprintf(stderr, "TODO: WRITEME CBOR VAR ARRAY\n");
+	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR ARRAY\n");
+	    return NULL;
 	} else {
 	    out = PyList_New((Py_ssize_t)aux);
 	    for (unsigned int i = 0; i < aux; i++) {
 		PyObject* subitem = inner_loads(raw, &pos, len);
 		if (subitem == NULL) {
-		    fprintf(stderr, "error building list at item %d of %llu\n", i, aux);
+		    //fprintf(stderr, "error building list at item %d of %llu\n", i, aux);
 		    return NULL;
 		}
 		PyList_SetItem(out, (Py_ssize_t)i, subitem);
@@ -137,23 +135,22 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
     case CBOR_MAP:
 	out = PyDict_New();
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    fprintf(stderr, "TODO: WRITEME CBOR VAR MAP\n");
+	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR MAP\n");
+	    return NULL;
 	} else {
-	    //fprintf(stderr, "loading dict of %llu\n", aux);
 	    for (unsigned int i = 0; i < aux; i++) {
 		PyObject* key = inner_loads(raw, &pos, len);
 		PyObject* value;
 		if (key == NULL) {
-		    fprintf(stderr, "error building map at key %d of %llu\n", i, aux);
+		    //fprintf(stderr, "error building map at key %d of %llu\n", i, aux);
 		    return NULL;
 		}
 		value = inner_loads(raw, &pos, len);
 		if (key == NULL) {
-		    fprintf(stderr, "error building map at value %d of %llu\n", i, aux);
+		    //fprintf(stderr, "error building map at value %d of %llu\n", i, aux);
 		    return NULL;
 		}
 		PyDict_SetItem(out, key, value);
-		//fprintf(stderr, "loaded dict [%u] of %llu\n", i, aux);
 	    }
 	}
 	break;
@@ -206,7 +203,8 @@ static PyObject* loads_bignum(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	*posp = pos;
 	return out;
     } else {
-	fprintf(stderr, "TODO: TAG BIGNUM bytes_info=%d, len(ull)=%lu\n", bytes_info, sizeof(unsigned long long));
+	PyErr_Format(PyExc_NotImplementedError, "TODO: TAG BIGNUM for bigger bignum bytes_info=%d, len(ull)=%lu\n", bytes_info, sizeof(unsigned long long));
+	return NULL;
     }
     return NULL;
 }
@@ -225,9 +223,11 @@ static PyObject* loads_tag(uint8_t* raw, uintptr_t* posp, Py_ssize_t len, uint64
 		return out;
 	    }
 	} else {
-	    fprintf(stderr, "raise Exception('TAG BIGNUM not followed by bytes but %02x')\n", raw[pos]);
+	    PyErr_Format(PyExc_ValueError, "TAG BIGNUM not followed by bytes but %02x at %lu", raw[pos], pos);
+	    return NULL;
 	}
-	fprintf(stderr, "TODO: WRITEME CBOR TAG BIGNUM %02x %02x\n", raw[pos], raw[pos+1]);
+	PyErr_Format(PyExc_ValueError, "TODO: WRITEME CBOR TAG BIGNUM %02x %02x at %lu\n", raw[pos], raw[pos+1], pos);
+	return NULL;
     } else if (aux == CBOR_TAG_NEGBIGNUM) {
 	// If the next object is bytes, interpret it here without making a PyObject for it.
 	if ((raw[pos] & CBOR_TYPE_MASK) == CBOR_BYTES) {
@@ -242,15 +242,15 @@ static PyObject* loads_tag(uint8_t* raw, uintptr_t* posp, Py_ssize_t len, uint64
 		return out;
 	    }
 	} else {
-	    fprintf(stderr, "raise Exception('TAG NEGBIGNUM not followed by bytes but %02x')\n", raw[pos]);
+	    PyErr_Format(PyExc_ValueError, "TAG NEGBIGNUM not followed by bytes but %02x at %lu", raw[pos], pos);
+	    return NULL;
 	}
-	fprintf(stderr, "TODO: WRITEME CBOR TAG NEGBIGNUM %02x %02x\n", raw[pos], raw[pos+1]);
-    } else {
-	fprintf(stderr, "TODO: WRITEME CBOR TAG %llu\n", aux);
+	PyErr_Format(PyExc_ValueError, "TODO: WRITEME CBOR TAG NEGBIGNUM %02x %02x at %lu\n", raw[pos], raw[pos+1], pos);
     }
     out = inner_loads(raw, &pos, len);
     if (out == NULL) {
-	fprintf(stderr, "error loading tagged object %02x %02x\n", raw[pos], raw[pos+1]);
+	// TODO? raise new exception with inner exception?
+	//PyErr_Format(PyExc_ValueError, "error loading tagged object %02x %02x at %llu\n", raw[pos], raw[pos+1], pos);
 	return NULL;
     }
     {
@@ -280,7 +280,7 @@ cbor_loads(PyObject* noself, PyObject* args) {
 	ob = PyTuple_GetItem(args, 0);
     } else {
 	PyObject* repr = PyObject_Repr(args);
-	fprintf(stderr, "args not list or tuple: %s\n",
+	PyErr_Format(PyExc_ValueError, "args not list or tuple: %s\n",
 		PyString_AsString(repr));
 	Py_DECREF(repr);
 	return NULL;
@@ -355,20 +355,24 @@ static void tag_aux_out(uint8_t cbor_type, uint64_t aux, uint8_t* out, uintptr_t
     return;
 }
 
-static void inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp);
+static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp);
 
-static void dumps_dict(PyObject* ob, uint8_t* out, uintptr_t* posp) {
+static int dumps_dict(PyObject* ob, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = *posp;
     Py_ssize_t dictiter = 0;
     PyObject* key;
     PyObject* val;
     Py_ssize_t dictlen = PyDict_Size(ob);
+    int err;
     tag_aux_out(CBOR_MAP, dictlen, out, &pos);
     while (PyDict_Next(ob, &dictiter, &key, &val)) {
-	inner_dumps(key, out, &pos);
-	inner_dumps(val, out, &pos);
+	err = inner_dumps(key, out, &pos);
+	if (err != 0) { return err; }
+	err = inner_dumps(val, out, &pos);
+	if (err != 0) { return err; }
     }
     *posp = pos;
+    return 0;
 }
 
 
@@ -379,11 +383,8 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
     uint8_t* revbytes = NULL;
     int revbytepos = 0;
     if (out != NULL) {
-	//fprintf(stderr, "dumps_bignum with output\n");
 	bytemask = PyLong_FromLongLong(0x0ff);
 	revbytes = PyMem_Malloc(23);
-    } else {
-	//fprintf(stderr, "dumps_bignum just count\n");
     }
     while (PyObject_IsTrue(val) && (revbytepos < 23)) {
 	if (revbytes != NULL) {
@@ -393,7 +394,6 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
 	}
 	revbytepos++;
 	val = PyNumber_InPlaceRshift(val, eight);
-	//fprintf(stderr, "dumps_bignum count pos=%d\n", revbytepos);
     }
     if (revbytes != NULL) {
 	out[pos] = CBOR_TAG | tag;
@@ -402,7 +402,6 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
 	pos++;
 	revbytepos--;
 	while (revbytepos >= 0) {
-	    //fprintf(stderr, "dumps_bignum  out pos=%d\n", revbytepos);
 	    out[pos] = revbytes[revbytepos];
 	    pos++;
 	    revbytepos--;
@@ -413,12 +412,12 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
     }
     Py_DECREF(eight);
     *posp = pos;
-    //fprintf(stderr, "dumps_bignum END\n");
 }
 
 
 // With out=NULL it just counts the length.
-static void inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
+// return err, 0=OK
+static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = (posp != NULL) ? *posp : 0;
 
     if (PyBool_Check(ob)) {
@@ -436,12 +435,14 @@ static void inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	}
 	pos += 1;
     } else if (PyDict_Check(ob)) {
-	dumps_dict(ob, out, &pos);
+	int err = dumps_dict(ob, out, &pos);
+	if (err != 0) { return err; }
     } else if (PyList_Check(ob)) {
 	Py_ssize_t listlen = PyList_Size(ob);
 	tag_aux_out(CBOR_ARRAY, listlen, out, &pos);
 	for (Py_ssize_t i = 0; i < listlen; i++) {
-	    inner_dumps(PyList_GetItem(ob, i), out, &pos);
+	    int err = inner_dumps(PyList_GetItem(ob, i), out, &pos);
+	    if (err != 0) { return err; }
 	}
     } else if (PyInt_Check(ob)) {
 	long val = PyInt_AsLong(ob);
@@ -492,11 +493,15 @@ static void inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	pos += len;
 	Py_DECREF(utf8);
     } else {
-	fprintf(stderr, "TODO: unknown object!\n");
+	PyObject* repr = PyObject_Repr(ob);
+	PyErr_Format(PyExc_ValueError, "cannot serialize unknown object: %s", PyString_AsString(repr));
+	Py_DECREF(repr);
+	return -1;
     }
     if (posp != NULL) {
 	*posp = pos;
     }
+    return 0;
 }
 
 static PyObject*
@@ -508,7 +513,7 @@ cbor_dumps(PyObject* noself, PyObject* args) {
 	ob = PyTuple_GetItem(args, 0);
     } else {
 	PyObject* repr = PyObject_Repr(args);
-	fprintf(stderr, "args not list or tuple: %s\n",
+	PyErr_Format(PyExc_ValueError, "args not list or tuple: %s\n",
 		PyString_AsString(repr));
 	Py_DECREF(repr);
 	return NULL;
@@ -519,20 +524,29 @@ cbor_dumps(PyObject* noself, PyObject* args) {
 	uintptr_t pos = 0;
 	void* out = NULL;
 	PyObject* obout = NULL;
+	int err;
 
 	// first pass just to count length
-	inner_dumps(ob, NULL, &pos);
+	err = inner_dumps(ob, NULL, &pos);
+	if (err != 0) {
+	    return NULL;
+	}
 
 	outlen = pos;
 
 	out = PyMem_Malloc(outlen);
 	if (out == NULL) {
-	    fprintf(stderr, "TODO: raise OutOfMemoryError\n");
+	    PyErr_NoMemory();
 	    return NULL;
 	}
 
-	inner_dumps(ob, out, NULL);
+	err = inner_dumps(ob, out, NULL);
+	if (err != 0) {
+	    PyMem_Free(out);
+	    return NULL;
+	}
 
+	// TODO: I wish there was a way to do this without this copy.
 	obout = PyBytes_FromStringAndSize(out, outlen);
 	PyMem_Free(out);
 	return obout;
