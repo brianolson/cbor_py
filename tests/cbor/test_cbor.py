@@ -70,6 +70,7 @@ class XTestCBOR(object):
         self._oso(1000000000000000)
         self._oso(-1000000000000000)
         self._oso([])
+        self._oso([1,2,3])
         self._oso({})
         self._oso(b'aoeu1234\x00\xff')
         self._oso(u'åöéûのかめ亀')
@@ -90,6 +91,13 @@ class XTestCBOR(object):
         for i in xrange(icount):
             ob = _randob()
             self._oso(ob)
+
+    def test_tuple(self):
+        l = [1,2,3]
+        t = tuple(l)
+        ser = self.dumps(t)
+        o2 = self.loads(ser)
+        assert l == o2
 
     def test_speed_vs_json(self):
         # It should be noted that the python standard library has a C implementation of key parts of json encoding and decoding

@@ -457,6 +457,13 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	    int err = inner_dumps(PyList_GetItem(ob, i), out, &pos);
 	    if (err != 0) { return err; }
 	}
+    } else if (PyTuple_Check(ob)) {
+	Py_ssize_t listlen = PyTuple_Size(ob);
+	tag_aux_out(CBOR_ARRAY, listlen, out, &pos);
+	for (Py_ssize_t i = 0; i < listlen; i++) {
+	    int err = inner_dumps(PyTuple_GetItem(ob, i), out, &pos);
+	    if (err != 0) { return err; }
+	}
     } else if (PyInt_Check(ob)) {
 	long val = PyInt_AsLong(ob);
 	if (val >= 0) {
