@@ -77,8 +77,9 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	    raw[pos + 3];
 	pos += 4;
     } else if (cbor_info == CBOR_UINT64_FOLLOWS) {
+        int si;
 	aux = 0;
-	for (int si = 0; si < 8; si++) {
+	for (si = 0; si < 8; si++) {
 	    aux = aux << 8;
 	    aux |= raw[pos + si];
 	}
@@ -121,8 +122,9 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR ARRAY\n");
 	    return NULL;
 	} else {
+            unsigned int i;
 	    out = PyList_New((Py_ssize_t)aux);
-	    for (unsigned int i = 0; i < aux; i++) {
+	    for (i = 0; i < aux; i++) {
 		PyObject* subitem = inner_loads(raw, &pos, len);
 		if (subitem == NULL) {
 		    //fprintf(stderr, "error building list at item %d of %llu\n", i, aux);
@@ -138,7 +140,8 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR MAP\n");
 	    return NULL;
 	} else {
-	    for (unsigned int i = 0; i < aux; i++) {
+            unsigned int i;
+	    for (i = 0; i < aux; i++) {
 		PyObject* key = inner_loads(raw, &pos, len);
 		PyObject* value;
 		if (key == NULL) {
@@ -184,10 +187,11 @@ static PyObject* loads_bignum(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 
     uint8_t bytes_info = raw[pos] & CBOR_INFO_BITS;
     if (bytes_info < 24) {
+        int i;
 	PyObject* eight = PyLong_FromLong(8);
 	out = PyLong_FromLong(0);
 	pos++;
-	for (int i = 0; i < bytes_info; i++) {
+	for (i = 0; i < bytes_info; i++) {
 	    // TODO: is this leaking like crazy?
 	    PyObject* curbyte;
 	    PyObject* tout = PyNumber_Lshift(out, eight);
@@ -449,16 +453,18 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	int err = dumps_dict(ob, out, &pos);
 	if (err != 0) { return err; }
     } else if (PyList_Check(ob)) {
+        Py_ssize_t i;
 	Py_ssize_t listlen = PyList_Size(ob);
 	tag_aux_out(CBOR_ARRAY, listlen, out, &pos);
-	for (Py_ssize_t i = 0; i < listlen; i++) {
+	for (i = 0; i < listlen; i++) {
 	    int err = inner_dumps(PyList_GetItem(ob, i), out, &pos);
 	    if (err != 0) { return err; }
 	}
     } else if (PyTuple_Check(ob)) {
+        Py_ssize_t i;
 	Py_ssize_t listlen = PyTuple_Size(ob);
 	tag_aux_out(CBOR_ARRAY, listlen, out, &pos);
-	for (Py_ssize_t i = 0; i < listlen; i++) {
+	for (i = 0; i < listlen; i++) {
 	    int err = inner_dumps(PyTuple_GetItem(ob, i), out, &pos);
 	    if (err != 0) { return err; }
 	}
