@@ -4,6 +4,7 @@
 import datetime
 import re
 import struct
+import sys
 
 CBOR_TYPE_MASK = 0xE0  # top 3 bits
 CBOR_INFO_BITS = 0x1F  # low 5 bits
@@ -53,6 +54,12 @@ CBOR_TAG_REGEX = 35
 CBOR_TAG_MIME = 36 # following text is MIME message, headers, separators and all
 CBOR_TAG_CBOR_FILEHEADER = 55799 # can open a file with 0xd9d9f7
 
+_CBOR_TAG_BIGNUM_BYTES = struct.pack('B', CBOR_TAG | CBOR_TAG_BIGNUM)
+
+
+_IS_PY3 = sys.version_info[0] >= 3
+
+
 def dumps_int(val):
     "return bytes representing int val in CBOR"
     if val >= 0:
@@ -68,22 +75,32 @@ def dumps_int(val):
         if val <= 0x0ffffffffffffffff:
             return struct.pack('!BQ', CBOR_UINT64_FOLLOWS, val)
         outb = _dumps_bignum_to_bytearray(val)
-        outa = [chr(CBOR_TAG | CBOR_TAG_BIGNUM), _encode_type_num(CBOR_BYTES, len(outb))] + outb
-        return b''.join(outa)
+        return _CBOR_TAG_BIGNUM_BYTES + _encode_type_num(CBOR_BYTES, len(outb)) + outb
     val = -1 - val
     return _encode_type_num(CBOR_NEGINT, val)
 
 
-def _dumps_bignum_to_bytearray(val):
-    out = []
-    while val > 0:
-        out.insert(0, chr(val & 0x0ff))
-        val = val >> 8
-    return out
+if _IS_PY3:
+    def _dumps_bignum_to_bytearray(val):
+        out = []
+        while val > 0:
+            out.insert(0, val & 0x0ff)
+            val = val >> 8
+        return bytes(out)
+else:
+    def _dumps_bignum_to_bytearray(val):
+        out = []
+        while val > 0:
+            out.insert(0, chr(val & 0x0ff))
+            val = val >> 8
+        return b''.join(out)
 
 
 def dumps_float(val):
     return struct.pack("!Bd", CBOR_FLOAT64, val)
+
+
+_CBOR_TAG_NEGBIGNUM_BYTES = struct.pack('B', CBOR_TAG | CBOR_TAG_NEGBIGNUM)
 
 
 def _encode_type_num(cbor_type, val):
@@ -103,12 +120,19 @@ def _encode_type_num(cbor_type, val):
     if cbor_type != CBOR_NEGINT:
         raise Exception("value too big for CBOR unsigned number: {0!r}".format(val))
     outb = _dumps_bignum_to_bytearray(val)
-    outa = [chr(CBOR_TAG | CBOR_TAG_NEGBIGNUM), _encode_type_num(CBOR_BYTES, len(outb))] + outb
-    return b''.join(outa)
+    return _CBOR_TAG_NEGBIGNUM_BYTES + _encode_type_num(CBOR_BYTES, len(outb)) + outb
+
+
+if _IS_PY3:
+    def _is_unicode(val):
+        return isinstance(val, str)
+else:
+    def _is_unicode(val):
+        return isinstance(val, unicode)
 
 
 def dumps_string(val, is_text=None, is_bytes=None):
-    if isinstance(val, unicode):
+    if _is_unicode(val):
         val = val.encode('utf8')
         is_text = True
         is_bytes = False
@@ -123,13 +147,22 @@ def dumps_array(arr):
     return head + b''.join(parts)
 
 
-def dumps_dict(d):
-    head = _encode_type_num(CBOR_MAP, len(d))
-    parts = [head]
-    for k,v in d.iteritems():
-        parts.append(dumps(k))
-        parts.append(dumps(v))
-    return b''.join(parts)
+if _IS_PY3:
+    def dumps_dict(d):
+        head = _encode_type_num(CBOR_MAP, len(d))
+        parts = [head]
+        for k,v in d.items():
+            parts.append(dumps(k))
+            parts.append(dumps(v))
+        return b''.join(parts)
+else:
+    def dumps_dict(d):
+        head = _encode_type_num(CBOR_MAP, len(d))
+        parts = [head]
+        for k,v in d.iteritems():
+            parts.append(dumps(k))
+            parts.append(dumps(v))
+        return b''.join(parts)
 
 
 def dumps_bool(b):
@@ -138,12 +171,24 @@ def dumps_bool(b):
     return struct.pack('B', CBOR_FALSE)
 
 
+if _IS_PY3:
+    def _is_stringish(x):
+        return isinstance(x, (str, bytes))
+    def _is_intish(x):
+        return isinstance(x, int)
+else:
+    def _is_stringish(x):
+        return isinstance(x, (str, basestring, bytes, unicode))
+    def _is_intish(x):
+        return isinstance(x, (int, long))
+
+
 def dumps(ob):
     if ob is None:
         return struct.pack('B', CBOR_NULL)
     if isinstance(ob, bool):
         return dumps_bool(ob)
-    if isinstance(ob, (str, basestring, bytes, unicode)):
+    if _is_stringish(ob):
         return dumps_string(ob)
     if isinstance(ob, (list, tuple)):
         return dumps_array(ob)
@@ -152,7 +197,7 @@ def dumps(ob):
         return dumps_dict(ob)
     if isinstance(ob, float):
         return dumps_float(ob)
-    if isinstance(ob, (int, long)):
+    if _is_intish(ob):
         return dumps_int(ob)
     raise Exception("don't know how to cbor serialize object of type %s", type(ob))
 
@@ -197,6 +242,46 @@ def _tag_aux(data, offset, tb):
     return tag, tag_aux, aux, bytes_read
 
 
+if _IS_PY3:
+    def _loads_array(data, offset, limit, depth, returntags, aux, bytes_read):
+        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+        ob = []
+        for i in range(aux):
+            subob, subpos = _loads(data, offset + bytes_read)
+            bytes_read += subpos
+            ob.append(subob)
+        return ob, bytes_read
+    def _loads_map(data, offset, limit, depth, returntags, aux, bytes_read):
+        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+        ob = {}
+        for i in range(aux):
+            subk, subpos = _loads(data, offset + bytes_read)
+            bytes_read += subpos
+            subv, subpos = _loads(data, offset + bytes_read)
+            bytes_read += subpos
+            ob[subk] = subv
+        return ob, bytes_read
+else:
+    def _loads_array(data, offset, limit, depth, returntags, aux, bytes_read):
+        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+        ob = []
+        for i in xrange(aux):
+            subob, subpos = _loads(data, offset + bytes_read)
+            bytes_read += subpos
+            ob.append(subob)
+        return ob, bytes_read
+    def _loads_map(data, offset, limit, depth, returntags, aux, bytes_read):
+        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+        ob = {}
+        for i in xrange(aux):
+            subk, subpos = _loads(data, offset + bytes_read)
+            bytes_read += subpos
+            subv, subpos = _loads(data, offset + bytes_read)
+            bytes_read += subpos
+            ob[subk] = subv
+        return ob, bytes_read
+        
+
 def _loads(data, offset=0, limit=None, depth=0, returntags=False):
     "return (object, bytes read)"
     if depth > _MAX_DEPTH:
@@ -228,23 +313,9 @@ def _loads(data, offset=0, limit=None, depth=0, returntags=False):
         ob = raw.decode('utf8')
         return (ob, bytes_read + subpos)
     elif tag == CBOR_ARRAY:
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
-        ob = []
-        for i in xrange(aux):
-            subob, subpos = _loads(data, offset + bytes_read)
-            bytes_read += subpos
-            ob.append(subob)
-        return ob, bytes_read
+        return _loads_array(data, offset, limit, depth, returntags, aux, bytes_read)
     elif tag == CBOR_MAP:
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
-        ob = {}
-        for i in xrange(aux):
-            subk, subpos = _loads(data, offset + bytes_read)
-            bytes_read += subpos
-            subv, subpos = _loads(data, offset + bytes_read)
-            bytes_read += subpos
-            ob[subk] = subv
-        return ob, bytes_read
+        return _loads_map(data, offset, limit, depth, returntags, aux, bytes_read)
     elif tag == CBOR_TAG:
         ob, subpos = _loads(data, offset + bytes_read)
         bytes_read += subpos
@@ -289,12 +360,20 @@ def loads_bytes(data, offset, aux, btag=CBOR_BYTES):
     return (b''.join(chunklist), total_bytes_read)
 
 
-def _bytes_to_biguint(bs):
-    out = 0
-    for ch in bs:
-        out = out << 8
-        out = out | ord(ch)
-    return out
+if _IS_PY3:
+    def _bytes_to_biguint(bs):
+        out = 0
+        for ch in bs:
+            out = out << 8
+            out = out | ch
+        return out
+else:
+    def _bytes_to_biguint(bs):
+        out = 0
+        for ch in bs:
+            out = out << 8
+            out = out | ord(ch)
+        return out
 
 
 def tagify(ob, aux):

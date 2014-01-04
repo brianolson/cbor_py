@@ -12,10 +12,19 @@ import zlib
 # TODO: make this test file parameterized on testing {python,c}{loads,dumps} in all four combinations
 
 #from cbor import dumps, loads
-from cbor import dumps as pydumps
-from cbor import loads as pyloads
+from cbor.cbor import dumps as pydumps
+from cbor.cbor import loads as pyloads
 from cbor._cbor import dumps as cdumps
 from cbor._cbor import loads as cloads
+
+
+_IS_PY3 = sys.version_info[0] >= 3
+
+
+if _IS_PY3:
+    _range = range
+else:
+    _range = xrange
 
 
 class TestRoot(object):
@@ -40,6 +49,15 @@ class TestCPy(TestRoot):
 
 class TestCC(TestRoot):
     _ld = [cloads, cdumps, 50000]
+
+
+if _IS_PY3:
+    def _join_jsers(jsers):
+        return (''.join(jsers)).encode('utf8')
+else:
+    def _join_jsers(jsers):
+        return b''.join(jsers)
+
 
 
 class XTestCBOR(object):
@@ -77,18 +95,18 @@ class XTestCBOR(object):
 
     def test_random_ints(self):
         icount = self.speediterations()
-        for i in xrange(icount):
+        for i in _range(icount):
             v = random.randint(-1000000000, 1000000000)
             self._oso(v)
         oldv = []
-        for i in xrange(int(icount / 10)):
+        for i in _range(int(icount / 10)):
             v = random.randint(-1000000000000000000000, 1000000000000000000000)
             self._oso(v)
             oldv.append(v)
 
     def test_randobs(self):
         icount = self.speediterations()
-        for i in xrange(icount):
+        for i in _range(icount):
             ob = _randob()
             self._oso(ob)
 
@@ -102,7 +120,7 @@ class XTestCBOR(object):
     def test_speed_vs_json(self):
         # It should be noted that the python standard library has a C implementation of key parts of json encoding and decoding
         icount = self.speediterations()
-        obs = [_randob() for x in xrange(icount)]
+        obs = [_randob() for x in _range(icount)]
         st = time.time()
         bsers = [self.dumps(o) for o in obs]
         nt = time.time()
@@ -115,7 +133,7 @@ class XTestCBOR(object):
             sum(map(len, bsers)), cbor_ser_time, len(obs) / cbor_ser_time,
             sum(map(len, jsers)), json_ser_time, len(obs) / json_ser_time))
         bsersz = zlib.compress(b''.join(bsers))
-        jsersz = zlib.compress(b''.join(jsers))
+        jsersz = zlib.compress(_join_jsers(jsers))
         sys.stderr.write('compress to {0} bytes cbor.gz and {1} bytes json.gz\n'.format(
             len(bsersz), len(jsersz)))
 
@@ -135,7 +153,7 @@ class XTestCBOR(object):
         try:
             ob = self.loads(None)
             assert False, "expected ValueError when passing in None"
-        except ValueError, ve:
+        except ValueError:
             pass
 
     # def test_concat():
@@ -167,17 +185,17 @@ class TestCBORCC(unittest.TestCase, XTestCBOR, TestCC):
 
 
 def _randArray():
-    return [_randob() for x in xrange(random.randint(0,5))]
+    return [_randob() for x in _range(random.randint(0,5))]
 
-_chars = [chr(x) for x in xrange(ord(' '), ord('~'))]
+_chars = [chr(x) for x in _range(ord(' '), ord('~'))]
 
 def _randString():
-    return ''.join([random.choice(_chars) for x in xrange(random.randint(1,10))])
+    return ''.join([random.choice(_chars) for x in _range(random.randint(1,10))])
 
 
 def _randDict():
     ob = {}
-    for x in xrange(random.randint(0,5)):
+    for x in _range(random.randint(0,5)):
         ob[_randString()] = _randob()
     return ob
 
@@ -193,7 +211,7 @@ _randob_probabilities = [
     (0.4, _randInt),
 ]
 
-_randob_probsum = sum(map(lambda x: x[0], _randob_probabilities))
+_randob_probsum = sum([x[0] for x in _randob_probabilities])
 
 
 def _randob():
