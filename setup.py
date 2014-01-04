@@ -5,7 +5,7 @@ from setuptools import setup, Extension
 
 setup(
     name='cbor',
-    version='0.1',
+    version='0.1.1',
     description='RFC 7049 - Concise Binary Object Representation',
     author='Brian Olson',
     author_email='bolson@bolson.org',
@@ -16,7 +16,9 @@ setup(
         Extension(
             'cbor._cbor',
             include_dirs=['c/'],
-            sources=['c/cbormodule.c'])
+            sources=['c/cbormodule.c'],
+            headers=['c/cbor.h'],
+        )
     ],
     license='AGPL',
 )
