@@ -6,8 +6,116 @@
 #include <stdint.h>
 
 //#include <stdio.h>
+#include <arpa/inet.h>
 
 static PyObject* loads_tag(uint8_t* raw, uintptr_t* posp, Py_ssize_t len, uint64_t aux);
+static int loads_kv(PyObject* out, uint8_t* raw, uintptr_t* posp, Py_ssize_t len);
+
+
+typedef struct VarBufferPart {
+    uintptr_t start;
+    size_t len;
+    struct VarBufferPart* next;
+} VarBufferPart;
+
+
+// TODO: portably work this out at compile time
+static int _is_big_endian = 0;
+
+static int is_big_endian() {
+    uint32_t val = 1234;
+    _is_big_endian = val == htonl(val);
+    //fprintf(stderr, "is_big_endian=%d\n", _is_big_endian);
+    return _is_big_endian;
+}
+
+
+PyObject* handle_float(uint8_t* raw, uintptr_t* posp, uint8_t cbor_info) {
+    uintptr_t pos = *posp;
+    if (cbor_info == CBOR_UINT16_FOLLOWS) { // float16
+	// float16 parsing adapted from example code in spec
+	uint8_t hibyte = raw[pos];
+	int exp = (hibyte >> 2) & 0x1f;
+	int mant = ((hibyte & 0x3) << 8) | raw[pos+1];
+	double val;
+	if (exp == 0) {
+	    val = ldexp(mant, -24);
+	} else if (exp != 31) {
+	    val = ldexp(mant + 1024, exp - 25);
+	} else {
+	    val = mant == 0 ? INFINITY : NAN;
+	}
+	if (hibyte & 0x80) {
+	    val = -val;
+	}
+	*posp = pos + 2;
+	return PyFloat_FromDouble(val);
+    } else if (cbor_info == CBOR_UINT32_FOLLOWS) { // float32
+	float val;
+	if (_is_big_endian) {
+	    // easy!
+	    void* dest = (void*)(&val);
+	    memcpy(dest, raw + pos, 4);
+	} else {
+	    uint8_t* dest = (uint8_t*)(&val);
+	    dest[3] = raw[pos + 0];
+	    dest[2] = raw[pos + 1];
+	    dest[1] = raw[pos + 2];
+	    dest[0] = raw[pos + 3];
+	}
+	*posp = pos + 4;
+	return PyFloat_FromDouble(val);
+    } else if (cbor_info == CBOR_UINT64_FOLLOWS) {  // float64
+        int si;
+	uint64_t aux = 0;
+	for (si = 0; si < 8; si++) {
+	    aux = aux << 8;
+	    aux |= raw[pos + si];
+	}
+	pos += 8;
+	*posp = pos;
+	return PyFloat_FromDouble(*((double*)(&aux)));
+    }
+    return NULL;
+}
+
+static uint64_t handle_info_bits(uint8_t* raw, uintptr_t* posp, uint8_t cbor_info) {
+    uintptr_t pos = *posp;
+    uint64_t aux;
+
+    if (cbor_info <= 23) {
+	// literal value <=23
+	aux = cbor_info;
+    } else if (cbor_info == CBOR_UINT8_FOLLOWS) {
+	aux = raw[pos];
+	pos += 1;
+    } else if (cbor_info == CBOR_UINT16_FOLLOWS) {
+	// if (cbor_type == CBOR_7) {} // TODO: raise exception, not expecting float in this place!
+	aux = (raw[pos] << 8) | raw[pos + 1];
+	pos += 2;
+    } else if (cbor_info == CBOR_UINT32_FOLLOWS) {
+	// if (cbor_type == CBOR_7) {} // TODO: raise exception, not expecting float in this place!
+	aux = 
+	    (raw[pos + 0] << 24) |
+	    (raw[pos + 1] << 16) |
+	    (raw[pos + 2] <<  8) |
+	    raw[pos + 3];
+	pos += 4;
+    } else if (cbor_info == CBOR_UINT64_FOLLOWS) {
+        int si;
+	aux = 0;
+	for (si = 0; si < 8; si++) {
+	    aux = aux << 8;
+	    aux |= raw[pos + si];
+	}
+	pos += 8;
+	//if (cbor_type == CBOR_7) {} // TODO: raise exception, not expecting float in this place!
+    } else {
+	aux = 0;
+    }
+    *posp = pos;
+    return aux;
+}
 
 
 static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
@@ -23,86 +131,75 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
     }
 
     pos += 1;
-    if (cbor_info <= 23) {
-	// literal value <=23
-	aux = cbor_info;
-    } else if (cbor_info == CBOR_UINT8_FOLLOWS) {
-	aux = raw[pos];
-	pos += 1;
-    } else if (cbor_info == CBOR_UINT16_FOLLOWS) {
-	if (cbor_type == CBOR_7) { // float16
-	    // float16 parsing adapted from example code in spec
-	    uint8_t hibyte = raw[pos];
-	    int exp = (hibyte >> 2) & 0x1f;
-	    int mant = ((hibyte & 0x3) << 8) | raw[pos+1];
-	    double val;
-	    if (exp == 0) {
-		val = ldexp(mant, -24);
-	    } else if (exp != 31) {
-		val = ldexp(mant + 1024, exp - 25);
-	    } else {
-		val = mant == 0 ? INFINITY : NAN;
-	    }
-	    if (hibyte & 0x80) {
-		val = -val;
-	    }
-	    *posp = pos + 2;
-	    return PyFloat_FromDouble(val);
-	}
-	aux = (raw[pos] << 8) | raw[pos + 1];
-	pos += 2;
-    } else if (cbor_info == CBOR_UINT32_FOLLOWS) {
-	if (cbor_type == CBOR_7) { // float32
-	    float val;
-#if BIG_ENDIAN
-	    // easy!
-	    void* dest = (void*)(&val);
-	    memcpy(dest, raw + pos, 4);
-#elif LITTLE_ENDIAN
-	    uint8_t* dest = (uint8_t*)(&val);
-	    dest[3] = raw[pos + 0];
-	    dest[2] = raw[pos + 1];
-	    dest[1] = raw[pos + 2];
-	    dest[0] = raw[pos + 3];
-#else
-#error "endianness undefined"
-#endif
-	    *posp = pos + 4;
-	    return PyFloat_FromDouble(val);
-	}
-	aux = 
-	    (raw[pos + 0] << 24) |
-	    (raw[pos + 1] << 16) |
-	    (raw[pos + 2] <<  8) |
-	    raw[pos + 3];
-	pos += 4;
-    } else if (cbor_info == CBOR_UINT64_FOLLOWS) {
-        int si;
-	aux = 0;
-	for (si = 0; si < 8; si++) {
-	    aux = aux << 8;
-	    aux |= raw[pos + si];
-	}
-	pos += 8;
-	if (cbor_type == CBOR_7) {  // float64
+    if (cbor_type == CBOR_7) {
+	PyObject* fout = handle_float(raw, &pos, cbor_info);
+	if (fout != NULL) {
 	    *posp = pos;
-	    return PyFloat_FromDouble(*((double*)(&aux)));
+	    return fout;
 	}
-    } else {
-	aux = 0;
+	// not a float, fall through to other CBOR_8 interpretations
     }
+    aux = handle_info_bits(raw, &pos, cbor_info);
+
     PyObject* out = NULL;
     switch (cbor_type) {
     case CBOR_UINT:
 	out = PyLong_FromUnsignedLongLong(aux);
 	break;
     case CBOR_NEGINT:
-	out = PyLong_FromLongLong((long long)(((long long)-1) - aux));
+	if (aux > 0x7fffffffffffffff) {
+	    PyObject* bignum = PyLong_FromUnsignedLongLong(aux);
+	    PyObject* minusOne = PyLong_FromLong(-1);
+	    out = PyNumber_Subtract(minusOne, bignum);
+	    Py_DECREF(minusOne);
+	    Py_DECREF(bignum);
+	} else {
+	    out = PyLong_FromLongLong((long long)(((long long)-1) - aux));
+	}
 	break;
     case CBOR_BYTES:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR BYTES\n");
-	    return NULL;
+	    size_t total = 0;
+	    VarBufferPart* parts = NULL;
+	    VarBufferPart* parts_tail = NULL;
+	    while (raw[pos] != CBOR_BREAK) {
+		uint8_t sc = raw[pos];
+		uint8_t scbor_type = sc & CBOR_TYPE_MASK;
+		uint8_t scbor_info = sc & CBOR_INFO_BITS;
+		uint64_t saux;
+
+		if (scbor_type != CBOR_BYTES) {
+		    PyErr_Format(PyExc_ValueError, "expected subordinate BYTES block under VAR BYTES, but got %x", scbor_type);
+		    return NULL;
+		}
+		saux = handle_info_bits(raw, &pos, scbor_info);
+		if (parts_tail == NULL) {
+		    parts = parts_tail = (VarBufferPart*)malloc(sizeof(VarBufferPart));
+		} else {
+		    parts_tail->next = (VarBufferPart*)malloc(sizeof(VarBufferPart));
+		    parts_tail = parts_tail->next;
+		}
+		parts_tail->next = NULL;
+		parts_tail->start = pos;
+		parts_tail->len = saux;
+		total += saux;
+	    }
+	    // Done, move past break;
+	    pos++;
+	    {
+		uint8_t* allbytes = (uint8_t*)malloc(total);
+		uintptr_t op = 0;
+		while (parts != NULL) {
+		    VarBufferPart* next;
+		    memcpy(allbytes + op, raw + parts->start, parts->len);
+		    op += parts->len;
+		    next = parts->next;
+		    free(parts);
+		    parts = next;
+		}
+		out = PyBytes_FromStringAndSize((char*)allbytes, total);
+		free(allbytes);
+	    }
 	} else {
 	    out = PyBytes_FromStringAndSize((char*)(raw + pos), (Py_ssize_t)aux);
 	    pos += aux;
@@ -110,8 +207,17 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	break;
     case CBOR_TEXT:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR TEXT\n");
-	    return NULL;
+	    PyObject* parts = PyList_New(0);
+	    PyObject* joiner = PyUnicode_FromString("");
+	    while (raw[pos] != CBOR_BREAK) {
+		PyObject* subitem = inner_loads(raw, &pos, len);
+		PyList_Append(parts, subitem);
+	    }
+	    // Done, move past break;
+	    pos++;
+	    out = PyUnicode_Join(joiner, parts);
+	    Py_DECREF(joiner);
+	    Py_DECREF(parts);
 	} else {
 	    out = PyUnicode_FromStringAndSize((char*)(raw + pos), (Py_ssize_t)aux);
 	    pos += aux;
@@ -119,8 +225,13 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
 	break;
     case CBOR_ARRAY:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR ARRAY\n");
-	    return NULL;
+	    out = PyList_New(0);
+	    while (raw[pos] != CBOR_BREAK) {
+		PyObject* subitem = inner_loads(raw, &pos, len);
+		PyList_Append(out, subitem);
+	    }
+	    // Done, move past break;
+	    pos++;
 	} else {
             unsigned int i;
 	    out = PyList_New((Py_ssize_t)aux);
@@ -137,23 +248,17 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
     case CBOR_MAP:
 	out = PyDict_New();
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
-	    PyErr_SetString(PyExc_NotImplementedError, "TODO: WRITEME CBOR VAR MAP\n");
-	    return NULL;
+	    while (raw[pos] != CBOR_BREAK) {
+		if (loads_kv(out, raw, &pos, len) != 0) {
+		    return NULL;
+		}
+	    }
 	} else {
             unsigned int i;
 	    for (i = 0; i < aux; i++) {
-		PyObject* key = inner_loads(raw, &pos, len);
-		PyObject* value;
-		if (key == NULL) {
-		    //fprintf(stderr, "error building map at key %d of %llu\n", i, aux);
+		if (loads_kv(out, raw, &pos, len) != 0) {
 		    return NULL;
 		}
-		value = inner_loads(raw, &pos, len);
-		if (key == NULL) {
-		    //fprintf(stderr, "error building map at value %d of %llu\n", i, aux);
-		    return NULL;
-		}
-		PyDict_SetItem(out, key, value);
 	    }
 	}
 	break;
@@ -180,6 +285,23 @@ static PyObject* inner_loads(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
     return out;
 }
 
+static int loads_kv(PyObject* out, uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
+    uintptr_t pos = *posp;
+    PyObject* key = inner_loads(raw, &pos, len);
+    PyObject* value;
+    if (key == NULL) {
+	//fprintf(stderr, "error building map at key %d of %llu\n", i, aux);
+	return -1;
+    }
+    value = inner_loads(raw, &pos, len);
+    if (key == NULL) {
+	//fprintf(stderr, "error building map at value %d of %llu\n", i, aux);
+	return -1;
+    }
+    PyDict_SetItem(out, key, value);
+    *posp = pos;
+    return 0;
+}
 
 static PyObject* loads_bignum(uint8_t* raw, uintptr_t* posp, Py_ssize_t len) {
     uintptr_t pos = *posp;
@@ -279,6 +401,7 @@ static PyObject* loads_tag(uint8_t* raw, uintptr_t* posp, Py_ssize_t len, uint64
 static PyObject*
 cbor_loads(PyObject* noself, PyObject* args) {
     PyObject* ob;
+    is_big_endian();
     if (PyType_IsSubtype(Py_TYPE(args), &PyList_Type)) {
 	ob = PyList_GetItem(args, 0);
     } else if (PyType_IsSubtype(Py_TYPE(args), &PyTuple_Type)) {
@@ -533,6 +656,7 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 static PyObject*
 cbor_dumps(PyObject* noself, PyObject* args) {
     PyObject* ob;
+    is_big_endian();
     if (PyType_IsSubtype(Py_TYPE(args), &PyList_Type)) {
 	ob = PyList_GetItem(args, 0);
     } else if (PyType_IsSubtype(Py_TYPE(args), &PyTuple_Type)) {
