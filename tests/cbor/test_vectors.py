@@ -12,6 +12,10 @@ import logging
 import os
 import sys
 
+
+_IS_PY3 = sys.version_info[0] >= 3
+
+
 def test_vectors():
     here = os.path.dirname(__file__)
     jf = os.path.abspath(os.path.join(here, '../../../test-vectors/appendix_a.json'))
@@ -19,7 +23,10 @@ def test_vectors():
         logging.warn('cannot find test-vectors/appendix_a.json, tried: %r', jf)
         return
 
-    tv = json.load(open(jf, 'rb'))
+    if _IS_PY3:
+        tv = json.load(open(jf, 'r'))
+    else:
+        tv = json.load(open(jf, 'rb'))
     anyerr = False
     for row in tv:
         if 'decoded' in row:
