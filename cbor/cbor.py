@@ -202,6 +202,12 @@ def dumps(ob):
     raise Exception("don't know how to cbor serialize object of type %s", type(ob))
 
 
+# TODO: write dump(obj, fp) streaming version.
+#
+# Integration with native code might be that native code yields bytes
+# objects that Python writes to the file-like object?
+
+
 class Tag(object):
     def __init__(self, tag, value):
         self.tag = tag
@@ -209,9 +215,19 @@ class Tag(object):
 
 
 def loads(data):
+    """
+    Parse CBOR bytes and return Python objects.
+    """
     if data is None:
         raise ValueError("got None for buffer to decode in loads")
     return _loads(data)[0]
+
+
+# TODO: write load(fp) streaming version
+#
+# Integration with native may be that it only handles native file()
+# object (not just any file-like object) which can be read fast from
+# the underlying C FILE*.
 
 
 _MAX_DEPTH = 100
@@ -377,6 +393,9 @@ else:
 
 
 def tagify(ob, aux):
+    # TODO: make this extensible?
+    # cbor.register_tag_handler(tagnumber, tag_handler)
+    # where tag_handler takes (tagnumber, tagged_object)
     if aux == CBOR_TAG_DATE_STRING:
         # TODO: parse RFC3339 date string
         pass
@@ -389,4 +408,4 @@ def tagify(ob, aux):
     if aux == CBOR_TAG_REGEX:
         # Is this actually a good idea? Should we just return the tag and the raw value to the user somehow?
         return re.compile(ob)
-    return ob
+    return Tag(aux, ob)
