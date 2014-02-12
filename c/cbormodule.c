@@ -432,6 +432,12 @@ cbor_loads(PyObject* noself, PyObject* args) {
     }
 }
 
+static PyObject*
+cbor_load(PyObject* noself, PyObject* args) {
+    PyErr_SetString(PyExc_NotImplementedError, "TODO: implement C load()");
+    return NULL;
+}
+
 
 static void tag_u64_out(uint8_t cbor_type, uint64_t aux, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = *posp;
@@ -700,12 +706,25 @@ cbor_dumps(PyObject* noself, PyObject* args) {
     }
 }
 
+static PyObject*
+cbor_dump(PyObject* noself, PyObject* args) {
+    PyErr_SetString(PyExc_NotImplementedError, "TODO: implement C dump()");
+    return NULL;
+}
+
 
 static PyMethodDef CborMethods[] = {
     {"loads",  cbor_loads, METH_VARARGS,
         "parse cbor from data buffer to objects"},
     {"dumps", cbor_dumps, METH_VARARGS,
         "serialize python object to bytes"},
+    {"load",  cbor_load, METH_VARARGS,
+     "Parse cbor from data buffer to objects.\n"
+     "Takes a file-like object capable of .read(N)\n"},
+    {"dump", cbor_dump, METH_VARARGS,
+     "Serialize python object to bytes.\n"
+     "dump(obj, fp)\n"
+     "obj: object to output; fp: file-like object to .write() to\n"},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 

@@ -6,6 +6,17 @@ import re
 import struct
 import sys
 
+_IS_PY3 = sys.version_info[0] >= 3
+
+if _IS_PY3:
+    from io import BytesIO as StringIO
+else:
+    try:
+        from cStringIO import StringIO
+    except:
+        from StringIO import StringIO
+
+
 CBOR_TYPE_MASK = 0xE0  # top 3 bits
 CBOR_INFO_BITS = 0x1F  # low 5 bits
 
@@ -55,9 +66,6 @@ CBOR_TAG_MIME = 36 # following text is MIME message, headers, separators and all
 CBOR_TAG_CBOR_FILEHEADER = 55799 # can open a file with 0xd9d9f7
 
 _CBOR_TAG_BIGNUM_BYTES = struct.pack('B', CBOR_TAG | CBOR_TAG_BIGNUM)
-
-
-_IS_PY3 = sys.version_info[0] >= 3
 
 
 def dumps_int(val):
@@ -202,10 +210,16 @@ def dumps(ob):
     raise Exception("don't know how to cbor serialize object of type %s", type(ob))
 
 
-# TODO: write dump(obj, fp) streaming version.
-#
-# Integration with native code might be that native code yields bytes
-# objects that Python writes to the file-like object?
+# same basic signature as json.dump, but with no options (yet)
+def dump(obj, fp):
+    """
+    obj: Python object to serialize
+    fp: file-like object capable of .write(bytes)
+    """
+    # this is kinda lame, but probably not inefficient for non-huge objects
+    # TODO: .write() to fp as we go as each inner object is serialized
+    blob = dumps(obj)
+    fp.write(blob)
 
 
 class Tag(object):
@@ -220,36 +234,41 @@ def loads(data):
     """
     if data is None:
         raise ValueError("got None for buffer to decode in loads")
-    return _loads(data)[0]
+    fp = StringIO(data)
+    return _loads(fp)[0]
 
 
-# TODO: write load(fp) streaming version
-#
-# Integration with native may be that it only handles native file()
-# object (not just any file-like object) which can be read fast from
-# the underlying C FILE*.
+def load(fp):
+    """
+    Parse and return object from fp, a file-like object supporting .read(n)
+    """
+    return _loads(fp)[0]
 
 
 _MAX_DEPTH = 100
 
 
-def _tag_aux(data, offset, tb):
+def _tag_aux(fp, tb):
     bytes_read = 1
     tag = tb & CBOR_TYPE_MASK
     tag_aux = tb & CBOR_INFO_BITS
     if tag_aux <= 23:
         aux = tag_aux
     elif tag_aux == CBOR_UINT8_FOLLOWS:
-        aux = struct.unpack_from("!B", data, offset + 1)[0]
+        data = fp.read(1)
+        aux = struct.unpack_from("!B", data, 0)[0]
         bytes_read += 1
     elif tag_aux == CBOR_UINT16_FOLLOWS:
-        aux = struct.unpack_from("!H", data, offset + 1)[0]
+        data = fp.read(2)
+        aux = struct.unpack_from("!H", data, 0)[0]
         bytes_read += 2
     elif tag_aux == CBOR_UINT32_FOLLOWS:
-        aux = struct.unpack_from("!I", data, offset + 1)[0]
+        data = fp.read(4)
+        aux = struct.unpack_from("!I", data, 0)[0]
         bytes_read += 4
     elif tag_aux == CBOR_UINT64_FOLLOWS:
-        aux = struct.unpack_from("!Q", data, offset + 1)[0]
+        data = fp.read(8)
+        aux = struct.unpack_from("!Q", data, 0)[0]
         bytes_read += 8
     else:
         assert tag_aux == CBOR_VAR_FOLLOWS, "bogus tag {0:02x}".format(tb)
@@ -258,82 +277,133 @@ def _tag_aux(data, offset, tb):
     return tag, tag_aux, aux, bytes_read
 
 
+def _read_byte(fp):
+    tb = fp.read(1)[0]
+    if not _IS_PY3:
+        tb = ord(tb)
+    return tb
+
+
+def _loads_var_array(fp, limit, depth, returntags, bytes_read):
+    ob = []
+    tb = _read_byte(fp)
+    while tb != CBOR_BREAK:
+        (subob, sub_len) = _loads_tb(fp, tb, limit, depth, returntags)
+        bytes_read += 1 + sub_len
+        ob.append(subob)
+        tb = _read_byte(fp)
+    return (ob, bytes_read + 1)
+
+
+def _loads_var_map(fp, limit, depth, returntags, bytes_read):
+    ob = {}
+    tb = _read_byte(fp)
+    while tb != CBOR_BREAK:
+        (subk, sub_len) = _loads_tb(fp, tb, limit, depth, returntags)
+        bytes_read += 1 + sub_len
+        (subv, sub_len) = _loads(fp, limit, depth, returntags)
+        bytes_read += sub_len
+        ob[subk] = subv
+        tb = _read_byte(fp)
+    return (ob, bytes_read + 1)
+
+
 if _IS_PY3:
-    def _loads_array(data, offset, limit, depth, returntags, aux, bytes_read):
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+    def _loads_array(fp, limit, depth, returntags, aux, bytes_read):
         ob = []
         for i in range(aux):
-            subob, subpos = _loads(data, offset + bytes_read)
+            subob, subpos = _loads(fp)
             bytes_read += subpos
             ob.append(subob)
         return ob, bytes_read
-    def _loads_map(data, offset, limit, depth, returntags, aux, bytes_read):
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+    def _loads_map(fp, limit, depth, returntags, aux, bytes_read):
         ob = {}
         for i in range(aux):
-            subk, subpos = _loads(data, offset + bytes_read)
+            subk, subpos = _loads(fp)
             bytes_read += subpos
-            subv, subpos = _loads(data, offset + bytes_read)
+            subv, subpos = _loads(fp)
             bytes_read += subpos
             ob[subk] = subv
         return ob, bytes_read
 else:
-    def _loads_array(data, offset, limit, depth, returntags, aux, bytes_read):
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+    def _loads_array(fp, limit, depth, returntags, aux, bytes_read):
         ob = []
         for i in xrange(aux):
-            subob, subpos = _loads(data, offset + bytes_read)
+            subob, subpos = _loads(fp)
             bytes_read += subpos
             ob.append(subob)
         return ob, bytes_read
-    def _loads_map(data, offset, limit, depth, returntags, aux, bytes_read):
-        # TODO: handle tag_aux == CBOR_VAR_FOLLOWS
+    def _loads_map(fp, limit, depth, returntags, aux, bytes_read):
         ob = {}
         for i in xrange(aux):
-            subk, subpos = _loads(data, offset + bytes_read)
+            subk, subpos = _loads(fp)
             bytes_read += subpos
-            subv, subpos = _loads(data, offset + bytes_read)
+            subv, subpos = _loads(fp)
             bytes_read += subpos
             ob[subk] = subv
         return ob, bytes_read
         
 
-def _loads(data, offset=0, limit=None, depth=0, returntags=False):
+def _loads(fp, limit=None, depth=0, returntags=False):
     "return (object, bytes read)"
     if depth > _MAX_DEPTH:
         raise Exception("hit CBOR loads recursion depth limit")
 
-    tb = struct.unpack_from("B", data, offset)[0]
+    tb = _read_byte(fp)
 
+    return _loads_tb(fp, tb, limit, depth, returntags)
+
+def _loads_tb(fp, tb, limit=None, depth=0, returntags=False):
     # Some special cases of CBOR_7 best handled by special struct.unpack logic here
     if tb == CBOR_FLOAT16:
-        raise Exception("don't know how to parse FLOAT16")
+        data = fp.read(2)
+        hibyte, lowbyte = struct.unpack_from("BB", data, 0)
+        exp = (hibyte >> 2) & 0x1F
+        mant = ((hibyte & 0x03) << 8) | lowbyte
+        if exp == 0:
+            val = mant * (2.0 ** -24)
+        elif exp == 31:
+            if mant == 0:
+                val = Inf
+            else:
+                val = NaN
+        else:
+            val = (mant + 1024.0) * (2 ** (exp - 25))
+        if hibyte & 0x80:
+            val = -1.0 * val
+        return (val, 3)
     elif tb == CBOR_FLOAT32:
-        pf = struct.unpack_from("!f", data, offset + 1)
+        data = fp.read(4)
+        pf = struct.unpack_from("!f", data, 0)
         return (pf[0], 5)
     elif tb == CBOR_FLOAT64:
-        pf = struct.unpack_from("!d", data, offset + 1)
+        data = fp.read(8)
+        pf = struct.unpack_from("!d", data, 0)
         return (pf[0], 9)
 
-    tag, tag_aux, aux, bytes_read = _tag_aux(data, offset, tb)
+    tag, tag_aux, aux, bytes_read = _tag_aux(fp, tb)
 
     if tag == CBOR_UINT:
         return (aux, bytes_read)
     elif tag == CBOR_NEGINT:
         return (-1 - aux, bytes_read)
     elif tag == CBOR_BYTES:
-        ob, subpos = loads_bytes(data, offset + bytes_read, aux)
+        ob, subpos = loads_bytes(fp, aux)
         return (ob, bytes_read + subpos)
     elif tag == CBOR_TEXT:
-        raw, subpos = loads_bytes(data, offset + bytes_read, aux, btag=CBOR_TEXT)
+        raw, subpos = loads_bytes(fp, aux, btag=CBOR_TEXT)
         ob = raw.decode('utf8')
         return (ob, bytes_read + subpos)
     elif tag == CBOR_ARRAY:
-        return _loads_array(data, offset, limit, depth, returntags, aux, bytes_read)
+        if aux is None:
+            return _loads_var_array(fp, limit, depth, returntags, bytes_read)
+        return _loads_array(fp, limit, depth, returntags, aux, bytes_read)
     elif tag == CBOR_MAP:
-        return _loads_map(data, offset, limit, depth, returntags, aux, bytes_read)
+        if aux is None:
+            return _loads_var_map(fp, limit, depth, returntags, bytes_read)
+        return _loads_map(fp, limit, depth, returntags, aux, bytes_read)
     elif tag == CBOR_TAG:
-        ob, subpos = _loads(data, offset + bytes_read)
+        ob, subpos = _loads(fp)
         bytes_read += subpos
         if returntags:
             # Don't interpret the tag, return it and the tagged object.
@@ -354,23 +424,25 @@ def _loads(data, offset=0, limit=None, depth=0, returntags=False):
         raise Exception("unknown cbor tag 7 byte: %02x", tb)
 
 
-def loads_bytes(data, offset, aux, btag=CBOR_BYTES):
+def loads_bytes(fp, aux, btag=CBOR_BYTES):
     # TODO: limit to some maximum number of chunks and some maximum total bytes
     if aux is not None:
         # simple case
-        ob = data[offset:offset + aux]
+        ob = fp.read(aux)
         return (ob, aux)
     # read chunks of bytes
     chunklist = []
     total_bytes_read = 0
     while True:
-        tb = data[offset + total_bytes_read]
+        tb = fp.read(1)[0]
+        if not _IS_PY3:
+            tb = ord(tb)
         if tb == CBOR_BREAK:
             total_bytes_read += 1
             break
-        tag, tag_aux, aux, bytes_read = _tag_aux(data, offset + total_bytes_read, tb)
+        tag, tag_aux, aux, bytes_read = _tag_aux(fp, tb)
         assert tag == btag, 'variable length value contains unexpected component'
-        ob = data[offset + total_bytes_read + bytes_read:offset + total_bytes_read + bytes_read + aux]
+        ob = fp.read(aux)
         chunklist.append(ob)
         total_bytes_read += bytes_read + aux
     return (b''.join(chunklist), total_bytes_read)

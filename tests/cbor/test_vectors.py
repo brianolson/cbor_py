@@ -6,7 +6,6 @@ https://github.com/cbor/test-vectors/
 """
 
 import base64
-import cbor
 import json
 import logging
 import os
@@ -14,6 +13,12 @@ import sys
 
 
 _IS_PY3 = sys.version_info[0] >= 3
+
+
+from cbor.cbor import dumps as pydumps
+from cbor.cbor import loads as pyloads
+from cbor._cbor import dumps as cdumps
+from cbor._cbor import loads as cloads
 
 
 def test_vectors():
@@ -32,9 +37,16 @@ def test_vectors():
         if 'decoded' in row:
             decoded = row['decoded']
             cbdata = base64.b64decode(row['cbor'])
-            cb = cbor.loads(cbdata)
+            cb = cloads(cbdata)
             if cb != decoded:
                 anyerr = True
-                sys.stderr.write('expected {0!r} got {1!r} failed to decode cbor {2}\n'.format(decoded, cb, base64.b16encode(cbdata)))
+                sys.stderr.write('expected {0!r} got {1!r} c failed to decode cbor {2}\n'.format(decoded, cb, base64.b16encode(cbdata)))
+
+            cb = pyloads(cbdata)
+            if cb != decoded:
+                anyerr = True
+                sys.stderr.write('expected {0!r} got {1!r} py failed to decode cbor {2}\n'.format(decoded, cb, base64.b16encode(cbdata)))
+
+
 
     assert not anyerr

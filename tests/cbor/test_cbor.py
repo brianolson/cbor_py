@@ -9,13 +9,15 @@ import time
 import unittest
 import zlib
 
-# TODO: make this test file parameterized on testing {python,c}{loads,dumps} in all four combinations
 
-#from cbor import dumps, loads
 from cbor.cbor import dumps as pydumps
 from cbor.cbor import loads as pyloads
+from cbor.cbor import dump as pydump
+from cbor.cbor import load as pyload
 from cbor._cbor import dumps as cdumps
 from cbor._cbor import loads as cloads
+from cbor._cbor import dump as cdump
+from cbor._cbor import load as cload
 
 
 _IS_PY3 = sys.version_info[0] >= 3
@@ -23,8 +25,10 @@ _IS_PY3 = sys.version_info[0] >= 3
 
 if _IS_PY3:
     _range = range
+    from io import BytesIO as StringIO
 else:
     _range = xrange
+    from cStringIO import StringIO
 
 
 class TestRoot(object):
@@ -37,18 +41,26 @@ class TestRoot(object):
     @classmethod
     def speediterations(cls):
         return cls._ld[2]
+    @classmethod
+    def load(cls, *args):
+        return cls._ld[3](*args)
+    @classmethod
+    def dump(cls, *args):
+        return cls._ld[4](*args)
 
+# Can't set class level function pointers, because then they expect a
+# (cls) first argument. So, toss them in a list to hide them.
 class TestPyPy(TestRoot):
-    _ld = [pyloads, pydumps, 1000]
+    _ld = [pyloads, pydumps, 1000, pyload, pydump]
 
 class TestPyC(TestRoot):
-    _ld = [pyloads, cdumps, 2000]
+    _ld = [pyloads, cdumps, 2000, pyload, cdump]
 
 class TestCPy(TestRoot):
-    _ld = [cloads, pydumps, 2000]
+    _ld = [cloads, pydumps, 2000, cload, pydump]
 
 class TestCC(TestRoot):
-    _ld = [cloads, cdumps, 50000]
+    _ld = [cloads, cdumps, 150000, cload, cdump]
 
 
 if _IS_PY3:
@@ -128,10 +140,19 @@ class XTestCBOR(object):
         jsers = [json.dumps(o) for o in obs]
         jt = time.time()
         json_ser_time = jt - nt
-        sys.stderr.write('serialized {0} objects into {1} cbor bytes in {2:.2f} seconds ({3:.2f}/s) and {4} json bytes in {5:.2f} seconds ({6:.2f}/s)\n'.format(
-            len(obs),
-            sum(map(len, bsers)), cbor_ser_time, len(obs) / cbor_ser_time,
-            sum(map(len, jsers)), json_ser_time, len(obs) / json_ser_time))
+        cbor_byte_count = sum(map(len, bsers))
+        json_byte_count = sum(map(len, jsers))
+        sys.stderr.write(
+            'serialized {nobs} objects into {cb} cbor bytes in {ct:.2f} seconds ({cops:.2f}/s, {cbps:.1f}B/s) and {jb} json bytes in {jt:.2f} seconds ({jops:.2f}/s, {jbps:.1f}B/s)\n'.format(
+            nobs=len(obs),
+            cb=cbor_byte_count,
+            ct=cbor_ser_time,
+            cops=len(obs) / cbor_ser_time,
+            cbps=cbor_byte_count / cbor_ser_time,
+            jb=json_byte_count,
+            jt=json_ser_time,
+            jops=len(obs) / json_ser_time,
+            jbps=json_byte_count / json_ser_time))
         bsersz = zlib.compress(b''.join(bsers))
         jsersz = zlib.compress(_join_jsers(jsers))
         sys.stderr.write('compress to {0} bytes cbor.gz and {1} bytes json.gz\n'.format(
@@ -144,10 +165,15 @@ class XTestCBOR(object):
         jo2 = [json.loads(b) for b in jsers]
         jt = time.time()
         json_load_time = jt - bt
-        sys.stderr.write('load {0} objects from cbor in {1:.2f} secs ({2:.2f}/sec) and json in {3:.2f} ({4:.2f}/sec)\n'.format(
-            len(obs),
-            cbor_load_time, len(obs) / cbor_load_time,
-            json_load_time, len(obs) / json_load_time))
+        sys.stderr.write('load {nobs} objects from cbor in {ct:.2f} secs ({cops:.2f}/sec, {cbps:.1f}B/s) and json in {jt:.2f} ({jops:.2f}/sec, {jbps:.1f}B/s)\n'.format(
+            nobs=len(obs),
+            ct=cbor_load_time,
+            cops=len(obs) / cbor_load_time,
+            cbps=cbor_byte_count / cbor_load_time,
+            jt=json_load_time,
+            jops=len(obs) / json_load_time,
+            jbps=json_byte_count / json_load_time
+        ))
 
     def test_loads_none(self):
         try:
@@ -156,19 +182,24 @@ class XTestCBOR(object):
         except ValueError:
             pass
 
-    # def test_concat():
-    #     "Test that we can concatenate output and retrieve the objects back out."
-    #     obs = ['aoeu', 2, {}, [1,2,3]]
-    #     _ob_ser_ob(obs)
-    #     sers = map(dumps, obs)
-    #     sercat = b''.join(sers)
-    #     fob = StringIO(sercat)
-    #     obs2 = []
-    #     obs2.append(load(fob))
-    #     obs2.append(load(fob))
-    #     obs2.append(load(fob))
-    #     obs2.append(load(fob))
-    #     assert obs == obs2
+    def test_concat(self):
+        "Test that we can concatenate output and retrieve the objects back out."
+        obs = ['aoeu', 2, {}, [1,2,3]]
+        self._oso(obs)
+        fob = StringIO()
+        try:
+            for ob in obs:
+                self.dump(ob, fob)
+            fob.seek(0)
+            obs2 = []
+            obs2.append(self.load(fob))
+            obs2.append(self.load(fob))
+            obs2.append(self.load(fob))
+            obs2.append(self.load(fob))
+            assert obs == obs2
+        except NotImplementedError as nie:
+            sys.stderr.write(str(nie) + '\n')
+            # let it go
 
 
 class TestCBORPyPy(unittest.TestCase, XTestCBOR, TestPyPy):
