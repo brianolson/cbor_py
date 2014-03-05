@@ -66,17 +66,24 @@ class TestCC(TestRoot):
 if _IS_PY3:
     def _join_jsers(jsers):
         return (''.join(jsers)).encode('utf8')
+    def hexstr(bs):
+        return ' '.join(map(lambda x: '{0:02x}'.format(x), bs))
 else:
     def _join_jsers(jsers):
         return b''.join(jsers)
-
+    def hexstr(bs):
+        return ' '.join(map(lambda x: '{0:02x}'.format(ord(x)), bs))
 
 
 class XTestCBOR(object):
     def _oso(self, ob):
         ser = self.dumps(ob)
-        o2 = self.loads(ser)
-        assert ob == o2, '%r != %r from %s' % (ob, o2, base64.b16encode(ser))
+        try:
+            o2 = self.loads(ser)
+            assert ob == o2, '%r != %r from %s' % (ob, o2, base64.b16encode(ser))
+        except Exception as e:
+            sys.stderr.write('failure on buf len={0} {1!r} ob={2!r}\n'.format(len(ser), hexstr(ser), ob))
+            raise
 
     def _osos(self, ob):
         obs = self.dumps(ob)
@@ -187,19 +194,16 @@ class XTestCBOR(object):
         obs = ['aoeu', 2, {}, [1,2,3]]
         self._oso(obs)
         fob = StringIO()
-        try:
-            for ob in obs:
-                self.dump(ob, fob)
-            fob.seek(0)
-            obs2 = []
-            obs2.append(self.load(fob))
-            obs2.append(self.load(fob))
-            obs2.append(self.load(fob))
-            obs2.append(self.load(fob))
-            assert obs == obs2
-        except NotImplementedError as nie:
-            sys.stderr.write(str(nie) + '\n')
-            # let it go
+
+        for ob in obs:
+            self.dump(ob, fob)
+        fob.seek(0)
+        obs2 = []
+        obs2.append(self.load(fob))
+        obs2.append(self.load(fob))
+        obs2.append(self.load(fob))
+        obs2.append(self.load(fob))
+        assert obs == obs2
 
 
 class TestCBORPyPy(unittest.TestCase, XTestCBOR, TestPyPy):
