@@ -5,7 +5,7 @@ from setuptools import setup, Extension
 
 setup(
     name='cbor',
-    version='0.1.4',
+    version='0.1.5',
     description='RFC 7049 - Concise Binary Object Representation',
     long_description="""
 An implementation of RFC 7049 - Concise Binary Object Representation (CBOR).
@@ -37,6 +37,7 @@ This library includes a C implementation which runs 3-5 times faster than the Py
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.3',
+        'Programming Language :: Python :: 3.4',
         'Programming Language :: C',
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
