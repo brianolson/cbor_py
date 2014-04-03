@@ -9,6 +9,12 @@
 #include <arpa/inet.h>
 
 
+#ifndef DEBUG_LOGGING
+// causes things to be written to stderr
+#define DEBUG_LOGGING 0
+//#define DEBUG_LOGGING 1
+#endif
+
 
 #ifdef Py_InitModule
 // Python 2.7
@@ -61,13 +67,26 @@ typedef struct VarBufferPart {
 } VarBufferPart;
 
 
+static int logprintf(const char* fmt, ...) {
+    va_list ap;
+    int ret;
+    va_start(ap, fmt);
+#if DEBUG_LOGGING
+    ret = vfprintf(stderr, fmt, ap);
+#else
+    ret = 0;
+#endif
+    va_end(ap);
+    return ret;
+}
+
 // TODO: portably work this out at compile time
 static int _is_big_endian = 0;
 
 static int is_big_endian() {
     uint32_t val = 1234;
     _is_big_endian = val == htonl(val);
-    //fprintf(stderr, "is_big_endian=%d\n", _is_big_endian);
+    //logprintf("is_big_endian=%d\n", _is_big_endian);
     return _is_big_endian;
 }
 
@@ -81,9 +100,9 @@ PyObject* decodeFloat16(Reader* rin) {
     double val;
 
     err = rin->read1(rin, &hibyte);
-    if (err) { fprintf(stderr, "fail in float16[0]\n"); return NULL; }
+    if (err) { logprintf("fail in float16[0]\n"); return NULL; }
     err = rin->read1(rin, &lobyte);
-    if (err) { fprintf(stderr, "fail in float16[1]\n"); return NULL; }
+    if (err) { logprintf("fail in float16[1]\n"); return NULL; }
 
     exp = (hibyte >> 2) & 0x1f;
     mant = ((hibyte & 0x3) << 8) | lobyte;
@@ -102,7 +121,7 @@ PyObject* decodeFloat16(Reader* rin) {
 PyObject* decodeFloat32(Reader* rin) {
     float val;
     uint8_t* raw = rin->read(rin, 4);
-    if (!raw) { return NULL; }
+    if (!raw) { logprintf("fail in float32\n"); return NULL; }
     if (_is_big_endian) {
 	// easy!
 	val = *((float*)raw);
@@ -120,7 +139,7 @@ PyObject* decodeFloat64(Reader* rin) {
     int si;
     uint64_t aux = 0;
     uint8_t* raw = rin->read(rin, 8);
-    if (!raw) { return NULL; }
+    if (!raw) { logprintf("fail in float64\n"); return NULL; }
     for (si = 0; si < 8; si++) {
 	aux = aux << 8;
 	aux |= raw[si];
@@ -139,16 +158,16 @@ static int handle_info_bits(Reader* rin, uint8_t cbor_info, uint64_t* auxP) {
 	aux = cbor_info;
     } else if (cbor_info == CBOR_UINT8_FOLLOWS) {
 	uint8_t taux;
-	if (rin->read1(rin, &taux)) { fprintf(stderr, "fail in uint8\n"); return -1; }
+	if (rin->read1(rin, &taux)) { logprintf("fail in uint8\n"); return -1; }
 	aux = taux;
     } else if (cbor_info == CBOR_UINT16_FOLLOWS) {
 	uint8_t hibyte, lobyte;
-	if (rin->read1(rin, &hibyte)) { fprintf(stderr, "fail in uint16[0]\n"); return -1; }
-	if (rin->read1(rin, &lobyte)) { fprintf(stderr, "fail in uint16[1]\n"); return -1; }
+	if (rin->read1(rin, &hibyte)) { logprintf("fail in uint16[0]\n"); return -1; }
+	if (rin->read1(rin, &lobyte)) { logprintf("fail in uint16[1]\n"); return -1; }
 	aux = (hibyte << 8) | lobyte;
     } else if (cbor_info == CBOR_UINT32_FOLLOWS) {
 	uint8_t* raw = (uint8_t*)rin->read(rin, 4);
-	if (!raw) { return -1; }
+	if (!raw) { logprintf("fail in uint32[1]\n"); return -1; }
 	aux = 
 	    (raw[0] << 24) |
 	    (raw[1] << 16) |
@@ -158,7 +177,7 @@ static int handle_info_bits(Reader* rin, uint8_t cbor_info, uint64_t* auxP) {
     } else if (cbor_info == CBOR_UINT64_FOLLOWS) {
         int si;
 	uint8_t* raw = (uint8_t*)rin->read(rin, 8);
-	if (!raw) { return -1; }
+	if (!raw) { logprintf("fail in uint64[1]\n"); return -1; }
 	aux = 0;
 	for (si = 0; si < 8; si++) {
 	    aux = aux << 8;
@@ -179,7 +198,7 @@ static PyObject* inner_loads(Reader* rin) {
     int err;
 
     err = rin->read1(rin, &c);
-    if (err) { fprintf(stderr, "fail in loads tag\n"); return NULL; }
+    if (err) { logprintf("fail in loads tag\n"); return NULL; }
     return inner_loads_c(rin, c);
 }
 
@@ -210,7 +229,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	}
 	// not a float, fall through to other CBOR_7 interpretations
     }
-    if (handle_info_bits(rin, cbor_info, &aux)) { return NULL; }
+    if (handle_info_bits(rin, cbor_info, &aux)) { logprintf("info bits failed\n"); return NULL; }
 
     PyObject* out = NULL;
     switch (cbor_type) {
@@ -234,7 +253,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	    VarBufferPart* parts = NULL;
 	    VarBufferPart* parts_tail = NULL;
 	    uint8_t sc;
-	    if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var bytes tag\n"); return NULL; }
+	    if (rin->read1(rin, &sc)) { logprintf("r1 fail in var bytes tag\n"); return NULL; }
 	    while (sc != CBOR_BREAK) {
 		uint8_t scbor_type = sc & CBOR_TYPE_MASK;
 		uint8_t scbor_info = sc & CBOR_INFO_BITS;
@@ -245,9 +264,9 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		    PyErr_Format(PyExc_ValueError, "expected subordinate BYTES block under VAR BYTES, but got %x", scbor_type);
 		    return NULL;
 		}
-		if(handle_info_bits(rin, scbor_info, &saux)) { return NULL; }
+		if(handle_info_bits(rin, scbor_info, &saux)) { logprintf("var bytes sub infobits failed\n"); return NULL; }
 		blob = rin->read(rin, saux);
-		if (!blob) { return NULL; }
+		if (!blob) { logprintf("var bytes sub bytes read failed\n"); return NULL; }
 		if (parts_tail == NULL) {
 		    parts = parts_tail = (VarBufferPart*)PyMem_Malloc(sizeof(VarBufferPart));
 		} else {
@@ -258,7 +277,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		parts_tail->start = blob;
 		parts_tail->len = saux;
 		total += saux;
-		if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var bytes tag\n"); return NULL; }
+		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var bytes tag\n"); return NULL; }
 	    }
 	    // Done
 	    {
@@ -276,22 +295,28 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		PyMem_Free(allbytes);
 	    }
 	} else {
-	    void* raw = rin->read(rin, aux);
-	    if (!raw) { return NULL; }
+	    void* raw;
+	    if (aux == 0) {
+		static void* empty_string = "";
+		raw = empty_string;
+	    } else {
+		raw = rin->read(rin, aux);
+		if (!raw) { logprintf("bytes read failed\n"); return NULL; }
+	    }
 	    out = PyBytes_FromStringAndSize(raw, (Py_ssize_t)aux);
-				  }
+	}
 	break;
     case CBOR_TEXT:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    PyObject* parts = PyList_New(0);
 	    PyObject* joiner = PyUnicode_FromString("");
 	    uint8_t sc;
-	    if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var text tag\n"); return NULL; }
+	    if (rin->read1(rin, &sc)) { logprintf("r1 fail in var text tag\n"); return NULL; }
 	    while (sc != CBOR_BREAK) {
 		PyObject* subitem = inner_loads_c(rin, sc);
-		if (subitem == NULL) { fprintf(stderr, "fail in var text subitem\n"); return NULL; }
+		if (subitem == NULL) { logprintf("fail in var text subitem\n"); return NULL; }
 		PyList_Append(parts, subitem);
-		if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var text tag\n"); return NULL; }
+		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var text tag\n"); return NULL; }
 	    }
 	    // Done
 	    out = PyUnicode_Join(joiner, parts);
@@ -306,12 +331,12 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    uint8_t sc;
 	    out = PyList_New(0);
-	    if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var array tag\n"); return NULL; }
+	    if (rin->read1(rin, &sc)) { logprintf("r1 fail in var array tag\n"); return NULL; }
 	    while (sc != CBOR_BREAK) {
 		PyObject* subitem = inner_loads_c(rin, sc);
-		if (subitem == NULL) { fprintf(stderr, "fail in var array subitem\n"); return NULL; }
+		if (subitem == NULL) { logprintf("fail in var array subitem\n"); return NULL; }
 		PyList_Append(out, subitem);
-		if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var array tag\n"); return NULL; }
+		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var array tag\n"); return NULL; }
 	    }
 	    // Done
 	} else {
@@ -319,7 +344,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	    out = PyList_New((Py_ssize_t)aux);
 	    for (i = 0; i < aux; i++) {
 		PyObject* subitem = inner_loads(rin);
-		if (subitem == NULL) { return NULL; }
+		if (subitem == NULL) { logprintf("array subitem[%d] (of %d) failed\n", i, aux); return NULL; }
 		PyList_SetItem(out, (Py_ssize_t)i, subitem);
 	    }
 	}
@@ -328,21 +353,22 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	out = PyDict_New();
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    uint8_t sc;
-	    if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var map tag\n"); return NULL; }
+	    if (rin->read1(rin, &sc)) { logprintf("r1 fail in var map tag\n"); return NULL; }
 	    while (sc != CBOR_BREAK) {
 		PyObject* key = inner_loads_c(rin, sc);
 		PyObject* value;
-		if (key == NULL) { return NULL; }
+		if (key == NULL) { logprintf("var map key fail\n"); return NULL; }
 		value = inner_loads(rin);
-		if (value == NULL) { return NULL; }
+		if (value == NULL) { logprintf("var map val vail\n"); return NULL; }
 		PyDict_SetItem(out, key, value);
 
-		if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in var map tag\n"); return NULL; }
+		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var map tag\n"); return NULL; }
 	    }
 	} else {
             unsigned int i;
 	    for (i = 0; i < aux; i++) {
 		if (loads_kv(out, rin) != 0) {
+		    logprintf("map kv[%d] failed\n", i);
 		    return NULL;
 		}
 	    }
@@ -350,6 +376,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	break;
     case CBOR_TAG:
 	out = loads_tag(rin, aux);
+	assert(out);
 	break;
     case CBOR_7:
 	if (aux == 20) {
@@ -362,20 +389,22 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	    out = Py_None;
 	    Py_INCREF(out);
 	}
+	assert(out);
 	break;
     default:
 	break;
 	// raise Exception("bogus cbor tag: %x")
     }
+    if (!out) { logprintf("out is null at end\n"); }
     return out;
 }
 
 static int loads_kv(PyObject* out, Reader* rin) {
     PyObject* key = inner_loads(rin);
     PyObject* value;
-    if (key == NULL) { return -1; }
+    if (key == NULL) { logprintf("map key fail\n"); return -1; }
     value = inner_loads(rin);
-    if (value == NULL) { return -1; }
+    if (value == NULL) { logprintf("map val fail\n"); return -1; }
     PyDict_SetItem(out, key, value);
     return 0;
 }
@@ -395,7 +424,7 @@ static PyObject* loads_bignum(Reader* rin, uint8_t c) {
 	    Py_DECREF(out);
 	    out = tout;
 	    uint8_t cb;
-	    if (rin->read1(rin, &cb)) { fprintf(stderr, "r1 fail in bignum %d/%d\n", i, bytes_info); return NULL; }
+	    if (rin->read1(rin, &cb)) { logprintf("r1 fail in bignum %d/%d\n", i, bytes_info); return NULL; }
 	    curbyte = PyLong_FromLong(cb);
 	    tout = PyNumber_Or(out, curbyte);
 	    Py_DECREF(curbyte);
@@ -417,7 +446,7 @@ static PyObject* loads_tag(Reader* rin, uint64_t aux) {
     if (aux == CBOR_TAG_BIGNUM) {
 	// If the next object is bytes, interpret it here without making a PyObject for it.
 	uint8_t sc;
-	if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in bignum tag\n"); return NULL; }
+	if (rin->read1(rin, &sc)) { logprintf("r1 fail in bignum tag\n"); return NULL; }
 	if ((sc & CBOR_TYPE_MASK) == CBOR_BYTES) {
 	    return loads_bignum(rin, sc);
 	} else {
@@ -429,7 +458,7 @@ static PyObject* loads_tag(Reader* rin, uint64_t aux) {
     } else if (aux == CBOR_TAG_NEGBIGNUM) {
 	// If the next object is bytes, interpret it here without making a PyObject for it.
 	uint8_t sc;
-	if (rin->read1(rin, &sc)) { fprintf(stderr, "r1 fail in negbignum tag\n"); return NULL; }
+	if (rin->read1(rin, &sc)) { logprintf("r1 fail in negbignum tag\n"); return NULL; }
 	if ((sc & CBOR_TYPE_MASK) == CBOR_BYTES) {
 	    out = loads_bignum(rin, sc);
 	    if (out != NULL) {
@@ -485,7 +514,6 @@ cbor_loads(PyObject* noself, PyObject* args) {
 	return NULL;
     }
 
-#if 1
     {
 	Reader* r = NewBufferReader(ob);
 	if (!r) {
@@ -493,22 +521,6 @@ cbor_loads(PyObject* noself, PyObject* args) {
 	}
 	return inner_loads(r);
     }
-#else
-    {
-	uint8_t* raw = (uint8_t*)PyBytes_AsString(ob);
-	Py_ssize_t len = PyBytes_Size(ob);
-	uintptr_t pos = 0;
-	if (len == 0) {
-	    PyErr_SetString(PyExc_ValueError, "got zero length string in loads");
-	    return NULL;
-	}
-	if (raw == NULL) {
-	    PyErr_SetString(PyExc_ValueError, "got NULL buffer for string");
-	    return NULL;
-	}
-	return inner_loads(raw, &pos, len);
-    }
-#endif
 }
 
 
@@ -519,6 +531,7 @@ typedef struct _FileReader {
     FILE* fin;
     void* dst;
     Py_ssize_t dst_size;
+    Py_ssize_t read_count;
 } FileReader;
 
 // read from a python builtin file which contains a C FILE*
@@ -526,6 +539,7 @@ static void* FileReader_read(void* self, Py_ssize_t len) {
     FileReader* thiz = (FileReader*)self;
     Py_ssize_t rtotal = 0;
     uintptr_t opos;
+    //logprintf("file read %d\n", len);
     if (len > thiz->dst_size) {
 	thiz->dst = PyMem_Realloc(thiz->dst, len);
 	thiz->dst_size = len;
@@ -544,17 +558,26 @@ static void* FileReader_read(void* self, Py_ssize_t len) {
 	    thiz->dst = NULL;
 	    return NULL;
 	}
+	thiz->read_count += rlen;
 	rtotal += rlen;
 	opos += rlen;
 	len -= rlen;
 	if (rtotal >= len) {
+	    assert(thiz->dst);
 	    return thiz->dst;
 	}
     }
 }
 static int FileReader_read1(void* self, uint8_t* oneByte) {
     FileReader* thiz = (FileReader*)self;
-    return 1 == fread((void*)oneByte, 1, 1, thiz->fin);
+    size_t didread = fread((void*)oneByte, 1, 1, thiz->fin);
+    if (didread == 0) {
+	logprintf("failed to read 1 from file\n");
+	PyErr_SetString(PyExc_ValueError, "got nothing reading 1 from file");
+	return -1;
+    }
+    thiz->read_count++;
+    return 0;
 }
 static void FileReader_return_buffer(void* self, void* buffer) {
     // Nothing to do, we hold onto the buffer and maybe reuse it for next read
@@ -572,6 +595,7 @@ static Reader* NewFileReader(PyObject* ob) {
     fr->fin = PyFile_AsFile(ob);
     fr->dst = NULL;
     fr->dst_size = 0;
+    fr->read_count = 0;
     SET_READER_FUNCTIONS(fr, FileReader);
     return (Reader*)fr;
 }
@@ -591,6 +615,9 @@ typedef struct _ObjectReader {
     // OR, we got several objects, we DECREFed them as we went, and
     // need to Free() this buffer at the end.
     void* dst;
+
+    Py_ssize_t read_count;
+    int exception_is_external;
 } ObjectReader;
 
 // read from a python file-like object which has a .read(n) method
@@ -598,16 +625,22 @@ static void* ObjectReader_read(void* context, Py_ssize_t len) {
     ObjectReader* thiz = (ObjectReader*)context;
     Py_ssize_t rtotal = 0;
     uintptr_t opos = 0;
+    //logprintf("ob read %d\n", len);
     while (rtotal < len) {
 	PyObject* retval = PyObject_CallMethod(thiz->ob, "read", "n", len - rtotal, NULL);
 	Py_ssize_t rlen;
+	if (retval == NULL) {
+	    thiz->exception_is_external = 1;
+	    return NULL;
+	}
 	if (!PyBytes_Check(retval)) {
 	    PyErr_SetString(PyExc_ValueError, "expected ob.read() to return a bytes object\n");
 	    return NULL;
 	}
 	rlen = PyBytes_Size(retval);
+	thiz->read_count += rlen;
 	if (rlen > len - rtotal) {
-	    fprintf(stderr, "TODO: raise exception: WAT ob.read() returned %ld bytes but only wanted %lu\n", rlen, len - rtotal);
+	    logprintf("TODO: raise exception: WAT ob.read() returned %ld bytes but only wanted %lu\n", rlen, len - rtotal);
 	    return thiz->dst;
 	}
 	if (rlen == len) {
@@ -615,6 +648,7 @@ static void* ObjectReader_read(void* context, Py_ssize_t len) {
 	    // We _keep_ a reference to retval until later.
 	    thiz->retval = retval;
 	    thiz->bytes = PyBytes_AsString(retval);
+	    assert(thiz->bytes);
 	    thiz->dst = NULL;
 	    opos = 0;
 	    return thiz->bytes;
@@ -629,6 +663,7 @@ static void* ObjectReader_read(void* context, Py_ssize_t len) {
 	opos += rlen;
 	rtotal += rlen;
     }
+    assert(thiz->dst);
     return thiz->dst;
 }
 static int ObjectReader_read1(void* self, uint8_t* oneByte) {
@@ -636,7 +671,8 @@ static int ObjectReader_read1(void* self, uint8_t* oneByte) {
     PyObject* retval = PyObject_CallMethod(thiz->ob, "read", "i", 1, NULL);
     Py_ssize_t rlen;
     if (retval == NULL) {
-	fprintf(stderr, "call ob read(1) failed\n");
+	thiz->exception_is_external = 1;
+	//logprintf("call ob read(1) failed\n");
 	return -1;
     }
     if (!PyBytes_Check(retval)) {
@@ -644,6 +680,7 @@ static int ObjectReader_read1(void* self, uint8_t* oneByte) {
 	return -1;
     }
     rlen = PyBytes_Size(retval);
+    thiz->read_count += rlen;
     if (rlen > 1) {
 	PyErr_Format(PyExc_ValueError, "TODO: raise exception: WAT ob.read() returned %ld bytes but only wanted 1\n", rlen);
 	return -1;
@@ -666,7 +703,7 @@ static void ObjectReader_return_buffer(void* context, void* buffer) {
 	PyMem_Free(thiz->dst);
 	thiz->dst = NULL;
     } else {
-	fprintf(stderr, "TODO: raise exception, could not release buffer %p, wanted dst=%p or bytes=%p\n", buffer, thiz->dst, thiz->bytes);
+	logprintf("TODO: raise exception, could not release buffer %p, wanted dst=%p or bytes=%p\n", buffer, thiz->dst, thiz->bytes);
     }
 }
 static void ObjectReader_delete(void* context) {
@@ -685,6 +722,8 @@ static Reader* NewObjectReader(PyObject* ob) {
     r->retval = NULL;
     r->bytes = NULL;
     r->dst = NULL;
+    r->read_count = 0;
+    r->exception_is_external = 0;
     SET_READER_FUNCTIONS(r, ObjectReader);
     return (Reader*)r;
 }
@@ -699,11 +738,12 @@ typedef struct _BufferReader {
 // read from a buffer, aka loads()
 static void* BufferReader_read(void* context, Py_ssize_t len) {
     BufferReader* thiz = (BufferReader*)context;
-    //fprintf(stderr, "br %p %d (%d)\n", thiz, len, thiz->len);
+    //logprintf("br %p %d (%d)\n", thiz, len, thiz->len);
     if (len <= thiz->len) {
 	void* out = (void*)thiz->pos;
 	thiz->pos += len;
 	thiz->len -= len;
+	assert(out);
 	return out;
     }
     PyErr_Format(PyExc_ValueError, "buffer read for %zd but only have %zd\n", len, thiz->len);
@@ -711,7 +751,7 @@ static void* BufferReader_read(void* context, Py_ssize_t len) {
 }
 static int BufferReader_read1(void* self, uint8_t* oneByte) {
     BufferReader* thiz = (BufferReader*)self;
-    //fprintf(stderr, "br %p _1_ (%d)\n", thiz, thiz->len);
+    //logprintf("br %p _1_ (%d)\n", thiz, thiz->len);
     if (thiz->len <= 0) {
 	PyErr_SetString(PyExc_LookupError, "buffer exhausted");
 	return -1;
@@ -742,7 +782,7 @@ static Reader* NewBufferReader(PyObject* ob) {
 	PyErr_SetString(PyExc_ValueError, "got NULL buffer for string");
 	return NULL;
     }
-    //fprintf(stderr, "NBR(%llx, %ld)\n", r->pos, r->len);
+    //logprintf("NBR(%llx, %ld)\n", r->pos, r->len);
     return (Reader*)r;
 }
 
@@ -765,17 +805,25 @@ cbor_load(PyObject* noself, PyObject* args) {
 	PyErr_SetString(PyExc_ValueError, "got None for buffer to decode in loads");
 	return NULL;
     }
+    PyObject* retval;
 #if HAS_FILE_READER
     if (PyFile_Check(ob)) {
 	reader = NewFileReader(ob);
+	retval = inner_loads(reader);
     } else
 #endif
     {
 	reader = NewObjectReader(ob);
+	retval = inner_loads(reader);
+	if ((retval == NULL) &&
+	    (!((ObjectReader*)reader)->exception_is_external) &&
+	    ((ObjectReader*)reader)->read_count == 0) {
+	    // never got anything, assume EOF
+	    PyErr_Clear();
+	    PyErr_SetString(PyExc_EOFError, "read nothing, apparent EOF");
+	}
     }
-    return inner_loads(reader);
-    //    PyErr_SetString(PyExc_NotImplementedError, "TODO: implement C load()");
-    // return NULL;
+    return retval;
 }
 
 
@@ -1106,12 +1154,18 @@ cbor_dump(PyObject* noself, PyObject* args) {
 	    PyObject* writeStr = PyString_FromString("write");
 #endif
 	    obout = PyBytes_FromStringAndSize(out, outlen);
-	    //fprintf(stderr, "write %zd bytes to %p.write() as %p\n", outlen, fp, obout);
+	    //logprintf("write %zd bytes to %p.write() as %p\n", outlen, fp, obout);
 	    ret = PyObject_CallMethodObjArgs(fp, writeStr, obout, NULL);
 	    Py_DECREF(writeStr);
-	    Py_DECREF(ret);
 	    Py_DECREF(obout);
-	    //fprintf(stderr, "wrote %zd bytes to %p.write() as %p\n", outlen, fp, obout);
+	    if (ret != NULL) {
+		Py_DECREF(ret);
+	    } else {
+		// exception in fp.write()
+		PyMem_Free(out);
+		return NULL;
+	    }
+	    //logprintf("wrote %zd bytes to %p.write() as %p\n", outlen, fp, obout);
 	}
 	PyMem_Free(out);
     }
