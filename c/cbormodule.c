@@ -515,11 +515,14 @@ cbor_loads(PyObject* noself, PyObject* args) {
     }
 
     {
+        PyObject* out = NULL;
 	Reader* r = NewBufferReader(ob);
 	if (!r) {
 	    return NULL;
 	}
-	return inner_loads(r);
+	out = inner_loads(r);
+        r->delete(r);
+        return out;
     }
 }
 
@@ -810,6 +813,7 @@ cbor_load(PyObject* noself, PyObject* args) {
     if (PyFile_Check(ob)) {
 	reader = NewFileReader(ob);
 	retval = inner_loads(reader);
+        reader->delete(reader);
     } else
 #endif
     {
@@ -822,6 +826,7 @@ cbor_load(PyObject* noself, PyObject* args) {
 	    PyErr_Clear();
 	    PyErr_SetString(PyExc_EOFError, "read nothing, apparent EOF");
 	}
+        reader->delete(reader);
     }
     return retval;
 }
