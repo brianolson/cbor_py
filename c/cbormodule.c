@@ -316,6 +316,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		PyObject* subitem = inner_loads_c(rin, sc);
 		if (subitem == NULL) { logprintf("fail in var text subitem\n"); return NULL; }
 		PyList_Append(parts, subitem);
+                Py_DECREF(subitem);
 		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var text tag\n"); return NULL; }
 	    }
 	    // Done
@@ -336,6 +337,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		PyObject* subitem = inner_loads_c(rin, sc);
 		if (subitem == NULL) { logprintf("fail in var array subitem\n"); return NULL; }
 		PyList_Append(out, subitem);
+                Py_DECREF(subitem);
 		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var array tag\n"); return NULL; }
 	    }
 	    // Done
@@ -346,6 +348,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		PyObject* subitem = inner_loads(rin);
 		if (subitem == NULL) { logprintf("array subitem[%d] (of %d) failed\n", i, aux); return NULL; }
 		PyList_SetItem(out, (Py_ssize_t)i, subitem);
+                // PyList_SetItem became the owner of the reference count of subitem, we don't need to DECREF it
 	    }
 	}
 	break;
@@ -361,6 +364,8 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		value = inner_loads(rin);
 		if (value == NULL) { logprintf("var map val vail\n"); return NULL; }
 		PyDict_SetItem(out, key, value);
+                Py_DECREF(key);
+                Py_DECREF(value);
 
 		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var map tag\n"); return NULL; }
 	    }
@@ -406,6 +411,8 @@ static int loads_kv(PyObject* out, Reader* rin) {
     value = inner_loads(rin);
     if (value == NULL) { logprintf("map val fail\n"); return -1; }
     PyDict_SetItem(out, key, value);
+    Py_DECREF(key);
+    Py_DECREF(value);
     return 0;
 }
 

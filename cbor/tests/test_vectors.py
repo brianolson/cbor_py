@@ -50,3 +50,8 @@ def test_vectors():
 
 
     assert not anyerr
+
+
+if __name__ == '__main__':
+    import unittest
+    unittest.main()
