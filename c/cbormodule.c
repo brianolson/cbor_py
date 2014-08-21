@@ -1182,7 +1182,7 @@ cbor_dump(PyObject* noself, PyObject* args) {
 	PyMem_Free(out);
     }
 
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 
