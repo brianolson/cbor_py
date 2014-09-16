@@ -447,6 +447,19 @@ static PyObject* loads_bignum(Reader* rin, uint8_t c) {
 }
 
 
+// returns a PyObject for cbor.cbor.Tag
+// Returned PyObject* is a BORROWED reference from the module dict
+static PyObject* getCborTagClass() {
+    PyObject* cbor_module = PyImport_ImportModule("cbor.cbor");
+    PyObject* moddict = PyModule_GetDict(cbor_module);
+    PyObject* tag_class = PyDict_GetItemString(moddict, "Tag");
+    // moddict and tag_class are 'borrowed reference'
+    Py_DECREF(cbor_module);
+
+    return tag_class;
+}
+
+
 static PyObject* loads_tag(Reader* rin, uint64_t aux) {
     PyObject* out = NULL;
     // return an object CBORTag(tagnum, nextob)
@@ -486,17 +499,12 @@ static PyObject* loads_tag(Reader* rin, uint64_t aux) {
     out = inner_loads(rin);
     if (out == NULL) { return NULL; }
     {
-	PyObject* cbor_module = PyImport_ImportModule("cbor");
-	PyObject* moddict = PyModule_GetDict(cbor_module);
-	PyObject* tag_class = PyDict_GetItemString(moddict, "Tag");
-	PyObject* args = Py_BuildValue("(K,o)", aux, out);
-	//PyObject* tout = PyInstance_New(tag_class, args, Py_None);
-	PyObject* tout = PyType_GenericNew((PyTypeObject*)tag_class, args, Py_None);
-	Py_DECREF(out);
+        PyObject* tag_class = getCborTagClass();
+	PyObject* args = Py_BuildValue("(K,O)", aux, out);
+        PyObject* tout = PyObject_CallObject(tag_class, args);
 	Py_DECREF(args);
-	Py_DECREF(tag_class);
-	// moddict is a 'borrowed reference'
-	Py_DECREF(cbor_module);
+	Py_DECREF(out);
+        // tag_class was just a borrowed reference
 	out = tout;
     }
     return out;
@@ -958,6 +966,63 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
     *posp = pos;
 }
 
+static int dumps_tag(PyObject* ob, uint8_t* out, uintptr_t* posp) {
+    uintptr_t pos = (posp != NULL) ? *posp : 0;
+    int err = 0;
+
+
+    PyObject* tag_num;
+    PyObject* tag_value;
+    err = 0;
+
+    tag_num = PyObject_GetAttrString(ob, "tag");
+    if (tag_num != NULL) {
+        tag_value = PyObject_GetAttrString(ob, "value");
+        if (tag_value != NULL) {
+#ifdef Py_INTOBJECT_H
+            if (PyInt_Check(tag_num)) {
+                long val = PyInt_AsLong(tag_num);
+                if (val > 0) {
+                    tag_aux_out(CBOR_TAG, val, out, &pos);
+                    err = inner_dumps(tag_value, out, &pos);
+                } else {
+                    PyErr_Format(PyExc_ValueError, "tag cannot be a negative int: %ld", val);
+                    err = -1;
+                }
+            } else
+#endif
+            if (PyLong_Check(tag_num)) {
+                int overflow = -1;
+                long long val = PyLong_AsLongLongAndOverflow(tag_num, &overflow);
+                if (overflow == 0) {
+                    if (val >= 0) {
+                        tag_aux_out(CBOR_TAG, val, out, &pos);
+                        err = inner_dumps(tag_value, out, &pos);
+                    } else {
+                        PyErr_Format(PyExc_ValueError, "tag cannot be a negative long: %lld", val);
+                        err = -1;
+                    }
+                } else {
+                    PyErr_SetString(PyExc_ValueError, "tag number too large");
+                    err = -1;
+                }
+            }
+            Py_DECREF(tag_value);
+        } else {
+            PyErr_SetString(PyExc_ValueError, "broken Tag object has .tag but not .value");
+            err = -1;
+        }
+        Py_DECREF(tag_num);
+    } else {
+        PyErr_SetString(PyExc_ValueError, "broken Tag object with no .tag");
+        err = -1;
+    }
+    if (err != 0) { return err; }
+
+    *posp = pos;
+    return err;
+}
+
 
 // With out=NULL it just counts the length.
 // return err, 0=OK
@@ -1050,8 +1115,23 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	pos += len;
 	Py_DECREF(utf8);
     } else {
-	PyErr_Format(PyExc_ValueError, "cannot serialize unknown object: %R", ob);
-	return -1;
+        int handled = 0;
+        {
+            PyObject* tag_class = getCborTagClass();
+            if (PyObject_IsInstance(ob, tag_class)) {
+                int err = dumps_tag(ob, out, &pos);
+                if (err != 0) { return err; }
+                handled = 1;
+            }
+            // tag_class was just a borrowed reference
+        }
+
+        // TODO: other special object serializations here
+
+        if (!handled) {
+            PyErr_Format(PyExc_ValueError, "cannot serialize unknown object: %R", ob);
+            return -1;
+        }
     }
     if (posp != NULL) {
 	*posp = pos;

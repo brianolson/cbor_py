@@ -14,6 +14,7 @@ from cbor.cbor import dumps as pydumps
 from cbor.cbor import loads as pyloads
 from cbor.cbor import dump as pydump
 from cbor.cbor import load as pyload
+from cbor.cbor import Tag
 from cbor._cbor import dumps as cdumps
 from cbor._cbor import loads as cloads
 from cbor._cbor import dump as cdump
@@ -82,7 +83,7 @@ class XTestCBOR(object):
             o2 = self.loads(ser)
             assert ob == o2, '%r != %r from %s' % (ob, o2, base64.b16encode(ser))
         except Exception as e:
-            sys.stderr.write('failure on buf len={0} {1!r} ob={2!r}\n'.format(len(ser), hexstr(ser), ob))
+            sys.stderr.write('failure on buf len={0} {1!r} ob={2!r} {3!r}; {4}\n'.format(len(ser), hexstr(ser), ob, ser, e))
             raise
 
     def _osos(self, ob):
@@ -111,6 +112,7 @@ class XTestCBOR(object):
         self._oso({})
         self._oso(b'aoeu1234\x00\xff')
         self._oso(u'åöéûのかめ亀')
+        self._oso(Tag(1234, 'aoeu'))
 
     def test_random_ints(self):
         icount = self.speediterations()
@@ -139,7 +141,7 @@ class XTestCBOR(object):
     def test_speed_vs_json(self):
         # It should be noted that the python standard library has a C implementation of key parts of json encoding and decoding
         icount = self.speediterations()
-        obs = [_randob() for x in _range(icount)]
+        obs = [_randob_notag() for x in _range(icount)]
         st = time.time()
         bsers = [self.dumps(o) for o in obs]
         nt = time.time()
@@ -219,28 +221,45 @@ class TestCBORCC(unittest.TestCase, XTestCBOR, TestCC):
     pass
 
 
-def _randArray():
-    return [_randob() for x in _range(random.randint(0,5))]
+def _randob():
+    return _randob_x(_randob_probabilities, _randob_probsum, _randob)
+
+def _randob_notag():
+    return _randob_x(_randob_probabilities_notag, _randob_notag_probsum, _randob_notag)
+
+def _randArray(randob=_randob):
+    return [randob() for x in _range(random.randint(0,5))]
 
 _chars = [chr(x) for x in _range(ord(' '), ord('~'))]
 
-def _randString():
+def _randString(randob=_randob):
     return ''.join([random.choice(_chars) for x in _range(random.randint(1,10))])
 
 
-def _randDict():
+def _randDict(randob=_randob):
     ob = {}
     for x in _range(random.randint(0,5)):
-        ob[_randString()] = _randob()
+        ob[_randString()] = randob()
     return ob
 
 
-def _randInt():
+def _randTag(randob=_randob):
+    t = Tag()
+    # Tags 0..36 are know standard things we might implement special
+    # decoding for. This number will grow over time, and this test
+    # need to be adjusted to only assign unclaimed tags for Tag<->Tag
+    # encode-decode testing.
+    t.tag = random.randint(37, 1000000)
+    t.value = randob()
+    return t
+
+def _randInt(randob=_randob):
     return random.randint(-1000000, 1000000)
 
 
 _randob_probabilities = [
     (0.1, _randDict),
+    (0.1, _randTag),
     (0.2, _randArray),
     (0.3, _randString),
     (0.4, _randInt),
@@ -248,12 +267,20 @@ _randob_probabilities = [
 
 _randob_probsum = sum([x[0] for x in _randob_probabilities])
 
+_randob_probabilities_notag = [
+    (0.1, _randDict),
+    (0.2, _randArray),
+    (0.3, _randString),
+    (0.4, _randInt),
+]
 
-def _randob():
-    pos = random.uniform(0, _randob_probsum)
-    for p, op in _randob_probabilities:
+_randob_notag_probsum = sum([x[0] for x in _randob_probabilities_notag])
+
+def _randob_x(probs=_randob_probabilities, probsum=_randob_probsum, randob=_randob):
+    pos = random.uniform(0, probsum)
+    for p, op in probs:
         if pos < p:
-            return op()
+            return op(randob)
         pos -= p
     return None
 

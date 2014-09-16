@@ -179,6 +179,10 @@ def dumps_bool(b):
     return struct.pack('B', CBOR_FALSE)
 
 
+def dumps_tag(t):
+    return _encode_type_num(CBOR_TAG, t.tag) + dumps(t.value)
+    
+
 if _IS_PY3:
     def _is_stringish(x):
         return isinstance(x, (str, bytes))
@@ -207,6 +211,8 @@ def dumps(ob):
         return dumps_float(ob)
     if _is_intish(ob):
         return dumps_int(ob)
+    if isinstance(ob, Tag):
+        return dumps_tag(ob)
     raise Exception("don't know how to cbor serialize object of type %s", type(ob))
 
 
@@ -223,9 +229,17 @@ def dump(obj, fp):
 
 
 class Tag(object):
-    def __init__(self, tag, value):
+    def __init__(self, tag=None, value=None):
         self.tag = tag
         self.value = value
+
+    def __repr__(self):
+        return "Tag({0!r}, {1!r})".format(self.tag, self.value)
+
+    def __eq__(self, other):
+        if not isinstance(other, Tag):
+            return False
+        return (self.tag == other.tag) and (self.value == other.value)
 
 
 def loads(data):
