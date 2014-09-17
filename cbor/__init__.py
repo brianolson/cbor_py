@@ -8,5 +8,10 @@ except:
     from .cbor import loads, dumps, load, dump
 
 from .cbor import Tag
+from .tagmap import TagMapper, ClassTag, UnknownTagException
 
-__all__ = ['loads', 'dumps', 'load', 'dump', 'Tag']
+__all__ = [
+    'loads', 'dumps', 'load', 'dump',
+    'Tag',
+    'TagMapper', 'ClassTag', 'UnknownTagException',
+]
