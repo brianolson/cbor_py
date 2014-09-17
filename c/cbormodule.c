@@ -828,6 +828,13 @@ cbor_load(PyObject* noself, PyObject* args) {
     if (PyFile_Check(ob)) {
 	reader = NewFileReader(ob);
 	retval = inner_loads(reader);
+        if ((retval == NULL) &&
+            (((FileReader*)reader)->read_count == 0) &&
+            (feof(((FileReader*)reader)->fin) != 0)) {
+	    // never got anything, started at EOF
+	    PyErr_Clear();
+	    PyErr_SetString(PyExc_EOFError, "read nothing, apparent EOF");
+        }
         reader->delete(reader);
     } else
 #endif
