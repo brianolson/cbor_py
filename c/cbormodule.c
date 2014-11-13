@@ -789,8 +789,16 @@ static void BufferReader_delete(void* context) {
 static Reader* NewBufferReader(PyObject* ob) {
     BufferReader* r = (BufferReader*)PyMem_Malloc(sizeof(BufferReader));
     SET_READER_FUNCTIONS(r, BufferReader);
-    r->raw = (uint8_t*)PyBytes_AsString(ob);
-    r->len = PyBytes_Size(ob);
+    if (PyByteArray_Check(ob)) {
+        r->raw = (uint8_t*)PyByteArray_AsString(ob);
+        r->len = PyByteArray_Size(ob);
+    } else if (PyBytes_Check(ob)) {
+        r->raw = (uint8_t*)PyBytes_AsString(ob);
+        r->len = PyBytes_Size(ob);
+    } else {
+        PyErr_SetString(PyExc_ValueError, "input of unknown type not bytes or bytearray");
+        return NULL;
+    }
     r->pos = (uintptr_t)r->raw;
     if (r->len == 0) {
 	PyErr_SetString(PyExc_ValueError, "got zero length string in loads");

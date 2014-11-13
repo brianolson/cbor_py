@@ -92,6 +92,15 @@ class XTestCBOR(object):
         o2s = self.dumps(o2)
         assert obs == o2s
 
+    def _oso_bytearray(self, ob):
+        ser = self.dumps(ob)
+        try:
+            o2 = self.loads(bytearray(ser))
+            assert ob == o2, '%r != %r from %s' % (ob, o2, base64.b16encode(ser))
+        except Exception as e:
+            sys.stderr.write('failure on buf len={0} {1!r} ob={2!r} {3!r}; {4}\n'.format(len(ser), hexstr(ser), ob, ser, e))
+            raise
+
     def test_basic(self):
         self._oso(1)
         self._oso(0)
@@ -113,6 +122,14 @@ class XTestCBOR(object):
         self._oso(b'aoeu1234\x00\xff')
         self._oso(u'åöéûのかめ亀')
         self._oso(Tag(1234, 'aoeu'))
+
+    def test_basic_bytearray(self):
+        xoso = self._oso
+        self._oso = self._oso_bytearray
+        try:
+            self.test_basic()
+        finally:
+            self._oso = xoso
 
     def test_random_ints(self):
         icount = self.speediterations()
