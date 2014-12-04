@@ -235,7 +235,10 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
     switch (cbor_type) {
     case CBOR_UINT:
 	out = PyLong_FromUnsignedLongLong(aux);
-	break;
+        if (out == NULL) {
+            PyErr_SetString(PyExc_RuntimeError, "unknown error decoding UINT");
+        }
+        return out;
     case CBOR_NEGINT:
 	if (aux > 0x7fffffffffffffff) {
 	    PyObject* bignum = PyLong_FromUnsignedLongLong(aux);
@@ -246,7 +249,10 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	} else {
 	    out = PyLong_FromLongLong((long long)(((long long)-1) - aux));
 	}
-	break;
+        if (out == NULL) {
+            PyErr_SetString(PyExc_RuntimeError, "unknown error decoding NEGINT");
+        }
+        return out;
     case CBOR_BYTES:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    size_t total = 0;
@@ -294,6 +300,9 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		out = PyBytes_FromStringAndSize((char*)allbytes, total);
 		PyMem_Free(allbytes);
 	    }
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding VAR BYTES");
+            }
 	} else {
 	    void* raw;
 	    if (aux == 0) {
@@ -304,8 +313,11 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		if (!raw) { logprintf("bytes read failed\n"); return NULL; }
 	    }
 	    out = PyBytes_FromStringAndSize(raw, (Py_ssize_t)aux);
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding BYTES");
+            }
 	}
-	break;
+        return out;
     case CBOR_TEXT:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    PyObject* parts = PyList_New(0);
@@ -323,11 +335,17 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	    out = PyUnicode_Join(joiner, parts);
 	    Py_DECREF(joiner);
 	    Py_DECREF(parts);
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding VAR TEXT");
+            }
 	} else {
 	    void* raw = rin->read(rin, aux);
 	    out = PyUnicode_FromStringAndSize((char*)raw, (Py_ssize_t)aux);
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding TEXT");
+            }
 	}
-	break;
+        return out;
     case CBOR_ARRAY:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    uint8_t sc;
@@ -341,6 +359,9 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var array tag\n"); return NULL; }
 	    }
 	    // Done
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding VAR ARRAY");
+            }
 	} else {
             unsigned int i;
 	    out = PyList_New((Py_ssize_t)aux);
@@ -350,8 +371,11 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		PyList_SetItem(out, (Py_ssize_t)i, subitem);
                 // PyList_SetItem became the owner of the reference count of subitem, we don't need to DECREF it
 	    }
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding ARRAY");
+            }
 	}
-	break;
+        return out;
     case CBOR_MAP:
 	out = PyDict_New();
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
@@ -369,6 +393,9 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 
 		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var map tag\n"); return NULL; }
 	    }
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding VAR MAP");
+            }
 	} else {
             unsigned int i;
 	    for (i = 0; i < aux; i++) {
@@ -377,12 +404,17 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		    return NULL;
 		}
 	    }
+            if (out == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "unknown error decoding MAP");
+            }
 	}
-	break;
+        return out;
     case CBOR_TAG:
 	out = loads_tag(rin, aux);
-	assert(out);
-	break;
+        if (out == NULL) {
+            PyErr_SetString(PyExc_RuntimeError, "unknown error decoding TAG...");
+        }
+        return out;
     case CBOR_7:
 	if (aux == 20) {
 	    out = Py_False;
@@ -394,14 +426,16 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	    out = Py_None;
 	    Py_INCREF(out);
 	}
-	assert(out);
-	break;
+        if (out == NULL) {
+            PyErr_Format(PyExc_ValueError, "unknown section 7 marker %02x, aux=%llx", c, aux);
+        }
+        return out;
     default:
-	break;
-	// raise Exception("bogus cbor tag: %x")
+        PyErr_Format(PyExc_RuntimeError, "unknown cbor marker %02x", c);
+        return NULL;
     }
-    if (!out) { logprintf("out is null at end\n"); }
-    return out;
+    PyErr_SetString(PyExc_RuntimeError, "cbor library internal error moof!");
+    return NULL;
 }
 
 static int loads_kv(PyObject* out, Reader* rin) {

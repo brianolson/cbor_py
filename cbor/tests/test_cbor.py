@@ -3,6 +3,7 @@
 
 import base64
 import json
+import logging
 import random
 import sys
 import time
@@ -19,6 +20,9 @@ from cbor._cbor import dumps as cdumps
 from cbor._cbor import loads as cloads
 from cbor._cbor import dump as cdump
 from cbor._cbor import load as cload
+
+
+logger = logging.getLogger(__name__)
 
 
 _IS_PY3 = sys.version_info[0] >= 3
@@ -224,6 +228,18 @@ class XTestCBOR(object):
         obs2.append(self.load(fob))
         assert obs == obs2
 
+    # TODO: find more bad strings with which to fuzz CBOR
+    def test_badread(self):
+        try:
+            ob = self.loads(b'\xff')
+            assert False, 'badread should have failed'
+        except ValueError as ve:
+            #logger.info('error', exc_info=True)
+            pass
+        except Exception as ex:
+            logger.info('unexpected error!', exc_info=True)
+            assert False, 'unexpected error' + str(ex)
+
 
 class TestCBORPyPy(unittest.TestCase, XTestCBOR, TestPyPy):
     pass
@@ -303,4 +319,5 @@ def _randob_x(probs=_randob_probabilities, probsum=_randob_probsum, randob=_rand
 
 
 if __name__ == '__main__':
-  unittest.main()
+    logging.basicConfig(level=logging.INFO)
+    unittest.main()

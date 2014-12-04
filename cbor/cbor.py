@@ -435,7 +435,7 @@ def _loads_tb(fp, tb, limit=None, depth=0, returntags=False):
             return (None, bytes_read)
         if tb == CBOR_UNDEFINED:
             return (None, bytes_read)
-        raise Exception("unknown cbor tag 7 byte: %02x", tb)
+        raise ValueError("unknown cbor tag 7 byte: %02x", tb)
 
 
 def loads_bytes(fp, aux, btag=CBOR_BYTES):
