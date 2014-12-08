@@ -83,7 +83,7 @@ static int logprintf(const char* fmt, ...) {
 // TODO: portably work this out at compile time
 static int _is_big_endian = 0;
 
-static int is_big_endian() {
+static int is_big_endian(void) {
     uint32_t val = 1234;
     _is_big_endian = val == htonl(val);
     //logprintf("is_big_endian=%d\n", _is_big_endian);
@@ -483,7 +483,7 @@ static PyObject* loads_bignum(Reader* rin, uint8_t c) {
 
 // returns a PyObject for cbor.cbor.Tag
 // Returned PyObject* is a BORROWED reference from the module dict
-static PyObject* getCborTagClass() {
+static PyObject* getCborTagClass(void) {
     PyObject* cbor_module = PyImport_ImportModule("cbor.cbor");
     PyObject* moddict = PyModule_GetDict(cbor_module);
     PyObject* tag_class = PyDict_GetItemString(moddict, "Tag");
@@ -608,6 +608,7 @@ static void* FileReader_read(void* self, Py_ssize_t len) {
 	    PyErr_Format(PyExc_ValueError, "only got %zd bytes with %zd stil to read from file", rtotal, len);
 	    PyMem_Free(thiz->dst);
 	    thiz->dst = NULL;
+            thiz->dst_size = 0;
 	    return NULL;
 	}
 	thiz->read_count += rlen;
@@ -615,7 +616,10 @@ static void* FileReader_read(void* self, Py_ssize_t len) {
 	opos += rlen;
 	len -= rlen;
 	if (rtotal >= len) {
-	    assert(thiz->dst);
+            if (thiz->dst == NULL) {
+                PyErr_SetString(PyExc_RuntimeError, "known error in file reader, NULL dst");
+                return NULL;
+            }
 	    return thiz->dst;
 	}
     }
@@ -643,8 +647,16 @@ static void FileReader_delete(void* self) {
 }
 static Reader* NewFileReader(PyObject* ob) {
     FileReader* fr = (FileReader*)PyMem_Malloc(sizeof(FileReader));
-    assert(PyFile_Check(ob));
+    if (fr == NULL) {
+        PyErr_SetString(PyExc_MemoryError, "failed to allocate FileReader");
+        return NULL;
+    }
     fr->fin = PyFile_AsFile(ob);
+    if (fr->fin == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "PyFile_AsFile NULL");
+        PyMem_Free(fr);
+        return NULL;
+    }
     fr->dst = NULL;
     fr->dst_size = 0;
     fr->read_count = 0;
@@ -869,6 +881,7 @@ cbor_load(PyObject* noself, PyObject* args) {
 #if HAS_FILE_READER
     if (PyFile_Check(ob)) {
 	reader = NewFileReader(ob);
+        if (reader == NULL) { return NULL; }
 	retval = inner_loads(reader);
         if ((retval == NULL) &&
             (((FileReader*)reader)->read_count == 0) &&
