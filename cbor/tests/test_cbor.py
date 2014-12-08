@@ -265,9 +265,21 @@ def _randArray(randob=_randob):
 
 _chars = [chr(x) for x in _range(ord(' '), ord('~'))]
 
+def _randStringOrBytes(randob=_randob):
+    tstr = ''.join([random.choice(_chars) for x in _range(random.randint(1,10))])
+    if random.randint(0,1) == 1:
+        if _IS_PY3:
+            # default str is unicode
+            # sometimes squash to bytes
+            return tstr.encode('utf8')
+        else:
+            # default str is bytes
+            # sometimes promote to unicode string
+            return tstr.decode('utf8')
+    return tstr
+
 def _randString(randob=_randob):
     return ''.join([random.choice(_chars) for x in _range(random.randint(1,10))])
-
 
 def _randDict(randob=_randob):
     ob = {}
@@ -289,13 +301,25 @@ def _randTag(randob=_randob):
 def _randInt(randob=_randob):
     return random.randint(-1000000, 1000000)
 
+def _randBignum(randob=_randob):
+    return random.randint(-1000000000000000000000, 1000000000000000000000)
+
+def _randFloat(randob=_randob):
+    return random.random()
+
+_CONSTANTS = (True, False, None)
+def _randConst(randob=_randob):
+    return random.choice(_CONSTANTS)
 
 _randob_probabilities = [
     (0.1, _randDict),
     (0.1, _randTag),
     (0.2, _randArray),
-    (0.3, _randString),
-    (0.4, _randInt),
+    (0.3, _randStringOrBytes),
+    (0.3, _randInt),
+    (0.2, _randBignum),
+    (0.2, _randFloat),
+    (0.2, _randConst),
 ]
 
 _randob_probsum = sum([x[0] for x in _randob_probabilities])
@@ -304,7 +328,10 @@ _randob_probabilities_notag = [
     (0.1, _randDict),
     (0.2, _randArray),
     (0.3, _randString),
-    (0.4, _randInt),
+    (0.3, _randInt),
+    (0.2, _randBignum),
+    (0.2, _randFloat),
+    (0.2, _randConst),
 ]
 
 _randob_notag_probsum = sum([x[0] for x in _randob_probabilities_notag])

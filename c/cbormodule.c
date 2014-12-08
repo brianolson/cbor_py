@@ -465,13 +465,19 @@ static PyObject* loads_bignum(Reader* rin, uint8_t c) {
 	    Py_DECREF(out);
 	    out = tout;
 	    uint8_t cb;
-	    if (rin->read1(rin, &cb)) { logprintf("r1 fail in bignum %d/%d\n", i, bytes_info); return NULL; }
+	    if (rin->read1(rin, &cb)) {
+                logprintf("r1 fail in bignum %d/%d\n", i, bytes_info);
+                Py_DECREF(eight);
+                Py_DECREF(out);
+                return NULL;
+            }
 	    curbyte = PyLong_FromLong(cb);
 	    tout = PyNumber_Or(out, curbyte);
 	    Py_DECREF(curbyte);
 	    Py_DECREF(out);
 	    out = tout;
 	}
+        Py_DECREF(eight);
 	return out;
     } else {
 	PyErr_Format(PyExc_NotImplementedError, "TODO: TAG BIGNUM for bigger bignum bytes_info=%d, len(ull)=%lu\n", bytes_info, sizeof(unsigned long long));
@@ -515,14 +521,13 @@ static PyObject* loads_tag(Reader* rin, uint64_t aux) {
 	if (rin->read1(rin, &sc)) { logprintf("r1 fail in negbignum tag\n"); return NULL; }
 	if ((sc & CBOR_TYPE_MASK) == CBOR_BYTES) {
 	    out = loads_bignum(rin, sc);
-	    if (out != NULL) {
-		PyObject* minusOne = PyLong_FromLong(-1);
-		PyObject* tout = PyNumber_Subtract(minusOne, out);
-		Py_DECREF(minusOne);
-		Py_DECREF(out);
-		out = tout;
-		return out;
-	    }
+            if (out == NULL) { logprintf("loads_bignum fail inside TAG_NEGBIGNUM\n"); return NULL; }
+            PyObject* minusOne = PyLong_FromLong(-1);
+            PyObject* tout = PyNumber_Subtract(minusOne, out);
+            Py_DECREF(minusOne);
+            Py_DECREF(out);
+            out = tout;
+            return out;
 	} else {
 	    PyErr_Format(PyExc_ValueError, "TAG NEGBIGNUM not followed by bytes but %02x", sc);
 	    return NULL;
@@ -994,8 +999,10 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
     uintptr_t pos = (posp != NULL) ? *posp : 0;
     PyObject* eight = PyLong_FromLong(8);
     PyObject* bytemask = NULL;
+    PyObject* nval = NULL;
     uint8_t* revbytes = NULL;
     int revbytepos = 0;
+    int val_is_orig = 1;
     if (out != NULL) {
 	bytemask = PyLong_FromLongLong(0x0ff);
 	revbytes = PyMem_Malloc(23);
@@ -1007,7 +1014,13 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
 	    Py_DECREF(tbyte);
 	}
 	revbytepos++;
-	val = PyNumber_InPlaceRshift(val, eight);
+	nval = PyNumber_InPlaceRshift(val, eight);
+        if (val_is_orig) {
+            val_is_orig = 0;
+        } else {
+            Py_DECREF(val);
+        }
+        val = nval;
     }
     if (revbytes != NULL) {
 	out[pos] = CBOR_TAG | tag;
@@ -1020,9 +1033,13 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
 	    pos++;
 	    revbytepos--;
 	}
+        PyMem_Free(revbytes);
 	Py_DECREF(bytemask);
     } else {
 	pos += 2 + revbytepos;
+    }
+    if (!val_is_orig) {
+        Py_DECREF(val);
     }
     Py_DECREF(eight);
     *posp = pos;

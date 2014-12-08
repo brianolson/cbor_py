@@ -18,7 +18,7 @@ from setuptools import setup, Extension
 
 setup(
     name='cbor',
-    version='0.1.14',
+    version='0.1.15',
     description='RFC 7049 - Concise Binary Object Representation',
     long_description="""
 An implementation of RFC 7049 - Concise Binary Object Representation (CBOR).
