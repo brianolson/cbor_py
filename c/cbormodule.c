@@ -410,11 +410,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	}
         return out;
     case CBOR_TAG:
-	out = loads_tag(rin, aux);
-        if (out == NULL) {
-            PyErr_SetString(PyExc_RuntimeError, "unknown error decoding TAG...");
-        }
-        return out;
+	return loads_tag(rin, aux);
     case CBOR_7:
 	if (aux == 20) {
 	    out = Py_False;
@@ -483,7 +479,6 @@ static PyObject* loads_bignum(Reader* rin, uint8_t c) {
 	PyErr_Format(PyExc_NotImplementedError, "TODO: TAG BIGNUM for bigger bignum bytes_info=%d, len(ull)=%lu\n", bytes_info, sizeof(unsigned long long));
 	return NULL;
     }
-    return NULL;
 }
 
 
