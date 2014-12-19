@@ -13,12 +13,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#from distutils.core import setup, Extension
+from distutils.command.build_ext import build_ext
+from distutils.errors import (CCompilerError, DistutilsExecError,
+    DistutilsPlatformError)
+import sys
+
 from setuptools import setup, Extension
 
-setup(
+
+build_errors = (CCompilerError, DistutilsExecError, DistutilsPlatformError)
+if sys.platform == 'win32' and sys.version_info > (2, 6):
+    # 2.6's distutils.msvc9compiler can raise an IOError when failing to
+    # find the compiler
+    build_errors += (IOError,)
+
+
+class BuildError(Exception):
+    """Raised if compiling extensions failed."""
+
+
+class optional_build_ext(build_ext):
+    """build_ext implementation with optional C speedups."""
+
+    def run(self):
+        try:
+            build_ext.run(self)
+        except DistutilsPlatformError:
+            raise BuildError()
+
+    def build_extension(self, ext):
+        try:
+            build_ext.build_extension(self, ext)
+        except build_errors as be:
+            raise BuildError(be)
+        except ValueError as ve:
+            # this can happen on Windows 64 bit, see Python issue 7511
+            if "'path'" in str(sys.exc_info()[1]): # works with Python 2 and 3
+                raise BuildError(ve)
+            raise
+
+
+setup_options = dict(
     name='cbor',
-    version='0.1.15',
+    version='0.1.16',
     description='RFC 7049 - Concise Binary Object Representation',
     long_description="""
 An implementation of RFC 7049 - Concise Binary Object Representation (CBOR).
@@ -54,4 +91,33 @@ This library includes a C implementation which runs 3-5 times faster than the Py
         'Programming Language :: C',
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
+    cmdclass={'build_ext': optional_build_ext},
 )
+
+
+def main():
+    """ Perform setup with optional C speedups.
+
+    Optional extension compilation stolen from markupsafe, which again stole
+    it from simplejson. Creds to Bob Ippolito for the original code.
+    """
+    is_jython = 'java' in sys.platform
+    is_pypy = hasattr(sys, 'pypy_translation_info')
+
+    if is_jython or is_pypy:
+        del setup_options['ext_modules']
+
+    try:
+        setup(**setup_options)
+    except BuildError as be:
+        sys.stderr.write('''
+BUILD ERROR:
+  %s
+RETRYING WITHOUT C EXTENSIONS
+''' % (be,))
+        del setup_options['ext_modules']
+        setup(**setup_options)
+
+
+if __name__ == '__main__':
+    main()
