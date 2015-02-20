@@ -5,7 +5,7 @@ except:
     # fall back to 100% python implementation
     from .cbor import loads, dumps, load, dump
 
-from .cbor import Tag
+from .cbor import Tag, CBOR_TAG_CBOR
 
 
 class ClassTag(object):
@@ -43,6 +43,8 @@ class TagMapper(object):
 
     def encode(self, obj):
         for ct in self.class_tags:
+            if (ct.class_type is None) or (ct.encode_function is None):
+                continue
             if isinstance(obj, ct.class_type):
                 return Tag(ct.tag_number, ct.encode_function(obj))
         if isinstance(obj, (list, tuple)):
@@ -88,6 +90,27 @@ class TagMapper(object):
 
     def loads(self, blob):
         return self.decode(loads(blob))
+
+
+class WrappedCBOR(ClassTag):
+    """Handles Tag 24, where a byte array is sub encoded CBOR.
+    Unpacks sub encoded object on finding such a tag.
+    Does not convert anyting into such a tag.
+
+    Usage:
+>>> import cbor
+>>> import cbor.tagmap
+>>> tm=cbor.TagMapper([cbor.tagmap.WrappedCBOR()])
+>>> x = cbor.dumps(cbor.Tag(24, cbor.dumps({"a":[1,2,3]})))
+>>> x
+'\xd8\x18G\xa1Aa\x83\x01\x02\x03'
+>>> tm.loads(x)
+{'a': [1L, 2L, 3L]}
+>>> cbor.loads(x)
+Tag(24L, '\xa1Aa\x83\x01\x02\x03')
+"""
+    def __init__(self):
+        super(WrappedCBOR, self).__init__(CBOR_TAG_CBOR, None, None, loads)
 
 
 class UnknownTagException(BaseException):
