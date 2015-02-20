@@ -112,6 +112,18 @@ Tag(24L, '\xa1Aa\x83\x01\x02\x03')
     def __init__(self):
         super(WrappedCBOR, self).__init__(CBOR_TAG_CBOR, None, None, loads)
 
+    @staticmethod
+    def wrap(ob):
+        return Tag(CBOR_TAG_CBOR, dumps(ob))
+
+    @staticmethod
+    def dump(ob, fp):
+        return dump(Tag(CBOR_TAG_CBOR, dumps(ob)), fp)
+
+    @staticmethod
+    def dumps(ob):
+        return dumps(Tag(CBOR_TAG_CBOR, dumps(ob)))
+
 
 class UnknownTagException(BaseException):
     pass
