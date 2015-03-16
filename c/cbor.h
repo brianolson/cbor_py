@@ -44,6 +44,7 @@
 #define CBOR_FALSE   (CBOR_7 | 20)
 #define CBOR_TRUE    (CBOR_7 | 21)
 #define CBOR_NULL    (CBOR_7 | 22)
+#define CBOR_UNDEFINED (CBOR_7 | 23)
 
 #define CBOR_FLOAT16 (CBOR_7 | 25)
 #define CBOR_FLOAT32 (CBOR_7 | 26)

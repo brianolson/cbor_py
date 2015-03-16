@@ -421,9 +421,13 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 	} else if (aux == 22) {
 	    out = Py_None;
 	    Py_INCREF(out);
+	} else if (aux == 23) {
+            // js `undefined`, closest is py None
+	    out = Py_None;
+	    Py_INCREF(out);
 	}
         if (out == NULL) {
-            PyErr_Format(PyExc_ValueError, "unknown section 7 marker %02x, aux=%llx", c, aux);
+            PyErr_Format(PyExc_ValueError, "unknown section 7 marker %02x, aux=%llu", c, aux);
         }
         return out;
     default:
@@ -854,7 +858,7 @@ static Reader* NewBufferReader(PyObject* ob) {
 	PyErr_SetString(PyExc_ValueError, "got NULL buffer for string");
 	return NULL;
     }
-    //logprintf("NBR(%llx, %ld)\n", r->pos, r->len);
+    //logprintf("NBR(%llu, %ld)\n", r->pos, r->len);
     return (Reader*)r;
 }
 

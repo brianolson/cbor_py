@@ -378,9 +378,9 @@ def _loads_tb(fp, tb, limit=None, depth=0, returntags=False):
             val = mant * (2.0 ** -24)
         elif exp == 31:
             if mant == 0:
-                val = Inf
+                val = float('Inf')
             else:
-                val = NaN
+                val = float('NaN')
         else:
             val = (mant + 1024.0) * (2 ** (exp - 25))
         if hibyte & 0x80:
@@ -435,7 +435,7 @@ def _loads_tb(fp, tb, limit=None, depth=0, returntags=False):
             return (None, bytes_read)
         if tb == CBOR_UNDEFINED:
             return (None, bytes_read)
-        raise ValueError("unknown cbor tag 7 byte: %02x", tb)
+        raise ValueError("unknown cbor tag 7 byte: {:02x}".format(tb))
 
 
 def loads_bytes(fp, aux, btag=CBOR_BYTES):
