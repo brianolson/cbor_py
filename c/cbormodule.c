@@ -168,12 +168,11 @@ static int handle_info_bits(Reader* rin, uint8_t cbor_info, uint64_t* auxP) {
     } else if (cbor_info == CBOR_UINT32_FOLLOWS) {
 	uint8_t* raw = (uint8_t*)rin->read(rin, 4);
 	if (!raw) { logprintf("fail in uint32[1]\n"); return -1; }
-	aux = (
-	    (raw[0] << 24) |
-	    (raw[1] << 16) |
-	    (raw[2] <<  8) |
-	    raw[3]
-               ) & 0x0ffffffffL;
+	aux = 
+            (((uint64_t)raw[0]) << 24) |
+	    (((uint64_t)raw[1]) << 16) |
+	    (((uint64_t)raw[2]) <<  8) |
+	    ((uint64_t)raw[3]);
 	rin->return_buffer(rin, raw);
     } else if (cbor_info == CBOR_UINT64_FOLLOWS) {
         int si;
