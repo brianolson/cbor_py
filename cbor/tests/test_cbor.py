@@ -117,6 +117,7 @@ class XTestCBOR(object):
         self._oso(1000)
         self._oso(-1000)
         self._oso(1000000000)
+        self._oso(2376030000)
         self._oso(-1000000000)
         self._oso(1000000000000000)
         self._oso(-1000000000000000)
@@ -138,7 +139,7 @@ class XTestCBOR(object):
     def test_random_ints(self):
         icount = self.speediterations()
         for i in _range(icount):
-            v = random.randint(-1000000000, 1000000000)
+            v = random.randint(-4294967295, 0xffffffff)
             self._oso(v)
         oldv = []
         for i in _range(int(icount / 10)):
@@ -299,7 +300,7 @@ def _randTag(randob=_randob):
     return t
 
 def _randInt(randob=_randob):
-    return random.randint(-1000000, 1000000)
+    return random.randint(-4294967295, 4294967295)
 
 def _randBignum(randob=_randob):
     return random.randint(-1000000000000000000000, 1000000000000000000000)
