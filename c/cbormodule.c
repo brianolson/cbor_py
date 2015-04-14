@@ -1207,7 +1207,15 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
         // TODO: other special object serializations here
 
         if (!handled) {
+#if IS_PY3
             PyErr_Format(PyExc_ValueError, "cannot serialize unknown object: %R", ob);
+#else
+            PyObject* badtype = PyObject_Type(ob);
+            PyObject* badtypename = PyObject_Str(badtype);
+            PyErr_Format(PyExc_ValueError, "cannot serialize unknown object of type %s", PyString_AsString(badtypename));
+            Py_DECREF(badtypename);
+            Py_DECREF(badtype);
+#endif
             return -1;
         }
     }
