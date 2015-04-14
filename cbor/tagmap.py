@@ -51,7 +51,12 @@ class TagMapper(object):
             return [self.encode(x) for x in obj]
         if isinstance(obj, dict):
             # assume key is a primitive
-            return {k:self.encode(v) for k,v in obj.iteritems()}
+            # can't do this in Python 2.6:
+            #return {k:self.encode(v) for k,v in obj.iteritems()}
+            out = {}
+            for k,v in obj.iteritems():
+                out[k] = self.encode(v)
+            return out
         # fall through, let underlying cbor.dump decide if it can encode object
         return obj
 
