@@ -17,10 +17,19 @@ import unittest
 _IS_PY3 = sys.version_info[0] >= 3
 
 
-from cbor.cbor import dumps as pydumps
+logger = logging.getLogger(__name__)
+
+
+#from cbor.cbor import dumps as pydumps
 from cbor.cbor import loads as pyloads
-from cbor._cbor import dumps as cdumps
-from cbor._cbor import loads as cloads
+try:
+    #from cbor._cbor import dumps as cdumps
+    from cbor._cbor import loads as cloads
+except ImportError:
+    # still test what we can without C fast mode
+    logger.warn('testing without C accelerated CBOR', exc_info=True)
+    #cdumps, cloads = None, None
+    cloads = None
 from cbor import Tag
 
 
@@ -48,10 +57,11 @@ _EXPECT_EXCEPTION = set(['f0', 'f818', 'f8ff'])
 
 def _check(row, decoded):
     cbdata = base64.b64decode(row['cbor'])
-    cb = cloads(cbdata)
-    if cb != decoded:
-        anyerr = True
-        sys.stderr.write('expected {0!r} got {1!r} c failed to decode cbor {2}\n'.format(decoded, cb, base64.b16encode(cbdata)))
+    if cloads is not None:
+        cb = cloads(cbdata)
+        if cb != decoded:
+            anyerr = True
+            sys.stderr.write('expected {0!r} got {1!r} c failed to decode cbor {2}\n'.format(decoded, cb, base64.b16encode(cbdata)))
 
     cb = pyloads(cbdata)
     if cb != decoded:
@@ -61,10 +71,11 @@ def _check(row, decoded):
 
 def _check_foo(row, checkf):
     cbdata = base64.b64decode(row['cbor'])
-    cb = cloads(cbdata)
-    if not checkf(cb):
-        anyerr = True
-        sys.stderr.write('expected {0!r} got {1!r} c failed to decode cbor {2}\n'.format(decoded, cb, base64.b16encode(cbdata)))
+    if cloads is not None:
+        cb = cloads(cbdata)
+        if not checkf(cb):
+            anyerr = True
+            sys.stderr.write('expected {0!r} got {1!r} c failed to decode cbor {2}\n'.format(decoded, cb, base64.b16encode(cbdata)))
 
     cb = pyloads(cbdata)
     if not checkf(cb):
@@ -110,14 +121,16 @@ class TestVectors(unittest.TestCase):
                     else:
                         logging.error('failed to py load hex=%s diag=%r', rhex, row.get('diagnostic'), exc_info=True)
                     pd = ''
-                try:
-                    cd = cloads(cbdata)
-                except:
-                    if rhex and (rhex in _EXPECT_EXCEPTION):
-                        pass
-                    else:
-                        logging.error('failed to c load hex=%s diag=%r', rhex, row.get('diagnostic'), exc_info=True)
-                    cd = ''
+                cd = None
+                if cloads is not None:
+                    try:
+                        cd = cloads(cbdata)
+                    except:
+                        if rhex and (rhex in _EXPECT_EXCEPTION):
+                            pass
+                        else:
+                            logging.error('failed to c load hex=%s diag=%r', rhex, row.get('diagnostic'), exc_info=True)
+                        cd = ''
                 logging.warning('skipping hex=%s diag=%r py=%s c=%s', rhex, row.get('diagnostic'), pd, cd)
             testfile.close()
 
@@ -125,4 +138,5 @@ class TestVectors(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
     unittest.main()

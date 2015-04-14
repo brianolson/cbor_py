@@ -5,7 +5,10 @@ import unittest
 
 from cbor.tagmap import ClassTag, TagMapper, Tag, UnknownTagException
 
-from .test_cbor import TestPyPy, hexstr
+#try:
+from cbor.tests.test_cbor import TestPyPy, hexstr
+#except ImportError:
+#    from .test_cbor import TestPyPy, hexstr
 
 
 class SomeType(object):

@@ -1,6 +1,8 @@
 #!python
 from __future__ import absolute_import
 from __future__ import division  # / => float
+import gc
+import logging
 import os
 import resource
 import sys
@@ -10,14 +12,23 @@ import unittest
 from cbor.tests.test_cbor import _randob
 
 
-from cbor._cbor import dumps as cdumps
-from cbor._cbor import loads as cloads
-from cbor._cbor import dump as cdump
-from cbor._cbor import load as cload
+logger = logging.getLogger(__name__)
+
+
+try:
+    from cbor._cbor import dumps as cdumps
+    from cbor._cbor import loads as cloads
+    from cbor._cbor import dump as cdump
+    from cbor._cbor import load as cload
+except ImportError:
+    # still test what we can without C fast mode
+    logger.warn('testing without C accelerated CBOR', exc_info=True)
+    cdumps, cloads, cdump, cload = None, None, None, None
+
 
 
 _TEST_COUNT = 100000
-_TEST_OUTER = 3
+_TEST_OUTER = 10
 
 
 _IS_PY3 = sys.version_info[0] >= 3
@@ -36,6 +47,9 @@ class TestUsage(unittest.TestCase):
         '''
         repeatedly serialize, check that usage doesn't go up
         '''
+        if cdumps is None:
+            logger.warn('no C dumps(), skipping test_dumps_usage')
+            return
         start_usage = resource.getrusage(resource.RUSAGE_SELF)
         usage_history = [start_usage]
         for o in _range(_TEST_OUTER):
@@ -61,6 +75,9 @@ class TestUsage(unittest.TestCase):
         '''
         repeatedly serialize, check that usage doesn't go up
         '''
+        if (cdumps is None) or (cloads is None):
+            logger.warn('no C fast CBOR, skipping test_loads_usage')
+            return
         ## Just a string passes!
         #ob = 'sntaoheusnatoheusnaotehuasnoetuhaosentuhaoesnth'
         ## Just an array passes!
@@ -95,6 +112,9 @@ class TestUsage(unittest.TestCase):
         '''repeatedly seralize to temp file, then repeatedly deserialize from
         it, checking usage all along the way.
         '''
+        if cdump is None:
+            logger.warn('no C dump(), skipping test_tempfile')
+            return
         with tempfile.NamedTemporaryFile() as ntf:
             # first, write a bunch to temp file
             with open(ntf.name, 'wb') as fout:
@@ -130,6 +150,7 @@ class TestUsage(unittest.TestCase):
                     for i in _range(_TEST_COUNT):
                         dob = cload(fin)
                         # and silently drop the result. I hope the garbage collector works!
+                    gc.collect()
                     t_usage = resource.getrusage(resource.RUSAGE_SELF)
                     usage_history.append(t_usage)
                 end_usage = usage_history[-1]

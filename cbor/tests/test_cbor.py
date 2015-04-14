@@ -11,18 +11,23 @@ import unittest
 import zlib
 
 
+logger = logging.getLogger(__name__)
+
+
 from cbor.cbor import dumps as pydumps
 from cbor.cbor import loads as pyloads
 from cbor.cbor import dump as pydump
 from cbor.cbor import load as pyload
 from cbor.cbor import Tag
-from cbor._cbor import dumps as cdumps
-from cbor._cbor import loads as cloads
-from cbor._cbor import dump as cdump
-from cbor._cbor import load as cload
-
-
-logger = logging.getLogger(__name__)
+try:
+    from cbor._cbor import dumps as cdumps
+    from cbor._cbor import loads as cloads
+    from cbor._cbor import dump as cdump
+    from cbor._cbor import load as cload
+except ImportError:
+    # still test what we can without C fast mode
+    logger.warn('testing without C accelerated CBOR', exc_info=True)
+    cdumps, cloads, cdump, cload = None, None, None, None
 
 
 _IS_PY3 = sys.version_info[0] >= 3
@@ -52,6 +57,12 @@ class TestRoot(object):
     @classmethod
     def dump(cls, *args):
         return cls._ld[4](*args)
+    @classmethod
+    def testable(cls):
+        ok = (cls._ld[0] is not None) and (cls._ld[1] is not None) and (cls._ld[3] is not None) and (cls._ld[4] is not None)
+        if not ok:
+            logger.warn('non-testable case %s skipped', cls.__name__)
+        return ok
 
 # Can't set class level function pointers, because then they expect a
 # (cls) first argument. So, toss them in a list to hide them.
@@ -106,6 +117,7 @@ class XTestCBOR(object):
             raise
 
     def test_basic(self):
+        if not self.testable(): return
         self._oso(1)
         self._oso(0)
         self._oso(True)
@@ -129,6 +141,7 @@ class XTestCBOR(object):
         self._oso(Tag(1234, 'aoeu'))
 
     def test_basic_bytearray(self):
+        if not self.testable(): return
         xoso = self._oso
         self._oso = self._oso_bytearray
         try:
@@ -137,6 +150,7 @@ class XTestCBOR(object):
             self._oso = xoso
 
     def test_random_ints(self):
+        if not self.testable(): return
         icount = self.speediterations()
         for i in _range(icount):
             v = random.randint(-4294967295, 0xffffffff)
@@ -148,12 +162,14 @@ class XTestCBOR(object):
             oldv.append(v)
 
     def test_randobs(self):
+        if not self.testable(): return
         icount = self.speediterations()
         for i in _range(icount):
             ob = _randob()
             self._oso(ob)
 
     def test_tuple(self):
+        if not self.testable(): return
         l = [1,2,3]
         t = tuple(l)
         ser = self.dumps(t)
@@ -161,6 +177,7 @@ class XTestCBOR(object):
         assert l == o2
 
     def test_speed_vs_json(self):
+        if not self.testable(): return
         # It should be noted that the python standard library has a C implementation of key parts of json encoding and decoding
         icount = self.speediterations()
         obs = [_randob_notag() for x in _range(icount)]
@@ -207,6 +224,7 @@ class XTestCBOR(object):
         ))
 
     def test_loads_none(self):
+        if not self.testable(): return
         try:
             ob = self.loads(None)
             assert False, "expected ValueError when passing in None"
@@ -215,6 +233,7 @@ class XTestCBOR(object):
 
     def test_concat(self):
         "Test that we can concatenate output and retrieve the objects back out."
+        if not self.testable(): return
         obs = ['aoeu', 2, {}, [1,2,3]]
         self._oso(obs)
         fob = StringIO()
@@ -231,6 +250,7 @@ class XTestCBOR(object):
 
     # TODO: find more bad strings with which to fuzz CBOR
     def test_badread(self):
+        if not self.testable(): return
         try:
             ob = self.loads(b'\xff')
             assert False, 'badread should have failed'
