@@ -274,14 +274,16 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
 		blob = rin->read(rin, saux);
 		if (!blob) { logprintf("var bytes sub bytes read failed\n"); return NULL; }
 		if (parts_tail == NULL) {
-		    parts = parts_tail = (VarBufferPart*)PyMem_Malloc(sizeof(VarBufferPart));
+		    parts = parts_tail = (VarBufferPart*)PyMem_Malloc(sizeof(VarBufferPart) + saux);
 		} else {
-		    parts_tail->next = (VarBufferPart*)PyMem_Malloc(sizeof(VarBufferPart));
+		    parts_tail->next = (VarBufferPart*)PyMem_Malloc(sizeof(VarBufferPart) + saux);
 		    parts_tail = parts_tail->next;
 		}
-		parts_tail->next = NULL;
-		parts_tail->start = blob;
+                parts_tail->start = (void*)(parts_tail + 1);
+                memcpy(parts_tail->start, blob, saux);
+                rin->return_buffer(rin, blob);
 		parts_tail->len = saux;
+		parts_tail->next = NULL;
 		total += saux;
 		if (rin->read1(rin, &sc)) { logprintf("r1 fail in var bytes tag\n"); return NULL; }
 	    }
@@ -316,6 +318,9 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
             if (out == NULL) {
                 PyErr_SetString(PyExc_RuntimeError, "unknown error decoding BYTES");
             }
+            if (aux != 0) {
+                rin->return_buffer(rin, raw);
+            }
 	}
         return out;
     case CBOR_TEXT:
@@ -344,6 +349,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
             if (out == NULL) {
                 PyErr_SetString(PyExc_RuntimeError, "unknown error decoding TEXT");
             }
+            rin->return_buffer(rin, raw);
 	}
         return out;
     case CBOR_ARRAY:
@@ -703,13 +709,15 @@ static void* ObjectReader_read(void* context, Py_ssize_t len) {
 	}
 	if (!PyBytes_Check(retval)) {
 	    PyErr_SetString(PyExc_ValueError, "expected ob.read() to return a bytes object\n");
+            Py_DECREF(retval);
 	    return NULL;
 	}
 	rlen = PyBytes_Size(retval);
 	thiz->read_count += rlen;
 	if (rlen > len - rtotal) {
-	    logprintf("TODO: raise exception: WAT ob.read() returned %ld bytes but only wanted %lu\n", rlen, len - rtotal);
-	    return thiz->dst;
+            PyErr_Format(PyExc_ValueError, "ob.read() returned %ld bytes but only wanted %lu\n", rlen, len - rtotal);
+            Py_DECREF(retval);
+            return NULL;
 	}
 	if (rlen == len) {
 	    // best case! All in one call to read()
@@ -1295,7 +1303,6 @@ cbor_dump(PyObject* noself, PyObject* args) {
 	Py_ssize_t outlen = 0;
 	uintptr_t pos = 0;
 	void* out = NULL;
-	PyObject* obout = NULL;
 	int err;
 
 	// first pass just to count length
@@ -1326,6 +1333,7 @@ cbor_dump(PyObject* noself, PyObject* args) {
 #endif
 	{
 	    PyObject* ret;
+            PyObject* obout = NULL;
 #if IS_PY3
 	    PyObject* writeStr = PyUnicode_FromString("write");
 #else
