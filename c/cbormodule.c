@@ -344,12 +344,21 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
                 PyErr_SetString(PyExc_RuntimeError, "unknown error decoding VAR TEXT");
             }
 	} else {
-	    void* raw = rin->read(rin, aux);
+            void* raw;
+	    if (aux == 0) {
+		static void* empty_string = "";
+		raw = empty_string;
+	    } else {
+                raw = rin->read(rin, aux);
+                if (!raw) { logprintf("read text failed\n"); return NULL; }
+            }
 	    out = PyUnicode_FromStringAndSize((char*)raw, (Py_ssize_t)aux);
             if (out == NULL) {
                 PyErr_SetString(PyExc_RuntimeError, "unknown error decoding TEXT");
             }
-            rin->return_buffer(rin, raw);
+            if (aux != 0) {
+                rin->return_buffer(rin, raw);
+            }
 	}
         return out;
     case CBOR_ARRAY:
@@ -700,14 +709,18 @@ static void* ObjectReader_read(void* context, Py_ssize_t len) {
     Py_ssize_t rtotal = 0;
     uintptr_t opos = 0;
     //logprintf("ob read %d\n", len);
+    assert(!thiz->dst);
+    assert(!thiz->bytes);
     while (rtotal < len) {
 	PyObject* retval = PyObject_CallMethod(thiz->ob, "read", "n", len - rtotal, NULL);
 	Py_ssize_t rlen;
 	if (retval == NULL) {
 	    thiz->exception_is_external = 1;
+            logprintf("exception in object.read()\n");
 	    return NULL;
 	}
 	if (!PyBytes_Check(retval)) {
+            logprintf("object.read() is not bytes\n");
 	    PyErr_SetString(PyExc_ValueError, "expected ob.read() to return a bytes object\n");
             Py_DECREF(retval);
 	    return NULL;
@@ -715,6 +728,7 @@ static void* ObjectReader_read(void* context, Py_ssize_t len) {
 	rlen = PyBytes_Size(retval);
 	thiz->read_count += rlen;
 	if (rlen > len - rtotal) {
+            logprintf("object.read() is too much!\n");
             PyErr_Format(PyExc_ValueError, "ob.read() returned %ld bytes but only wanted %lu\n", rlen, len - rtotal);
             Py_DECREF(retval);
             return NULL;

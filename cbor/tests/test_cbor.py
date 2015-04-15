@@ -116,29 +116,36 @@ class XTestCBOR(object):
             sys.stderr.write('failure on buf len={0} {1!r} ob={2!r} {3!r}; {4}\n'.format(len(ser), hexstr(ser), ob, ser, e))
             raise
 
+    test_objects = [
+        1,
+        0,
+        True,
+        False,
+        None,
+        -1,
+        -1.5,
+        1.5,
+        1000,
+        -1000,
+        1000000000,
+        2376030000,
+        -1000000000,
+        1000000000000000,
+        -1000000000000000,
+        [],
+        [1,2,3],
+        {},
+        b'aoeu1234\x00\xff',
+        u'åöéûのかめ亀',
+        b'',
+        u'',
+        Tag(1234, 'aoeu'),
+    ]
+
     def test_basic(self):
         if not self.testable(): return
-        self._oso(1)
-        self._oso(0)
-        self._oso(True)
-        self._oso(False)
-        self._oso(None)
-        self._oso(-1)
-        self._oso(-1.5)
-        self._oso(1.5)
-        self._oso(1000)
-        self._oso(-1000)
-        self._oso(1000000000)
-        self._oso(2376030000)
-        self._oso(-1000000000)
-        self._oso(1000000000000000)
-        self._oso(-1000000000000000)
-        self._oso([])
-        self._oso([1,2,3])
-        self._oso({})
-        self._oso(b'aoeu1234\x00\xff')
-        self._oso(u'åöéûのかめ亀')
-        self._oso(Tag(1234, 'aoeu'))
+        for ob in self.test_objects:
+            self._oso(ob)
 
     def test_basic_bytearray(self):
         if not self.testable(): return
@@ -234,19 +241,19 @@ class XTestCBOR(object):
     def test_concat(self):
         "Test that we can concatenate output and retrieve the objects back out."
         if not self.testable(): return
-        obs = ['aoeu', 2, {}, [1,2,3]]
-        self._oso(obs)
+        self._oso(self.test_objects)
         fob = StringIO()
 
-        for ob in obs:
+        for ob in self.test_objects:
             self.dump(ob, fob)
         fob.seek(0)
         obs2 = []
-        obs2.append(self.load(fob))
-        obs2.append(self.load(fob))
-        obs2.append(self.load(fob))
-        obs2.append(self.load(fob))
-        assert obs == obs2
+        try:
+            while True:
+                obs2.append(self.load(fob))
+        except EOFError:
+            pass
+        assert obs2 == self.test_objects
 
     # TODO: find more bad strings with which to fuzz CBOR
     def test_badread(self):

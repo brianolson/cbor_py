@@ -292,10 +292,11 @@ def _tag_aux(fp, tb):
 
 
 def _read_byte(fp):
-    tb = fp.read(1)[0]
-    if not _IS_PY3:
-        tb = ord(tb)
-    return tb
+    tb = fp.read(1)
+    if len(tb) == 0:
+        # I guess not all file-like objects do this
+        raise EOFError()
+    return ord(tb)
 
 
 def _loads_var_array(fp, limit, depth, returntags, bytes_read):

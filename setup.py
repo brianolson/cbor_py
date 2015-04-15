@@ -55,7 +55,7 @@ class optional_build_ext(build_ext):
 
 setup_options = dict(
     name='cbor',
-    version='0.1.20',
+    version='0.1.21',
     description='RFC 7049 - Concise Binary Object Representation',
     long_description="""
 An implementation of RFC 7049 - Concise Binary Object Representation (CBOR).
@@ -68,7 +68,7 @@ This library includes a C implementation which runs 3-5 times faster than the Py
 """,
     author='Brian Olson',
     author_email='bolson@bolson.org',
-    url='https://code.google.com/p/cbor',
+    url='https://bitbucket.org/bodhisnarkva/cbor',
     packages=['cbor'],
     package_dir={'cbor':'cbor'},
     ext_modules=[
