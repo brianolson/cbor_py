@@ -27,4 +27,7 @@ Available on pypi:
 pip install cbor
 
 ## Go ##
+
+import cbor "bitbucket.org/bodhisnarkva/cbor/go"
+
 The Go implementation is newer. It attempts to do serialization to/from struct types using reflection, but doesn't do 100% of cases like that right. It _should_ do everything fine serializing `map[string]interface{}` and `[]interface{}` and other basic types. It passes the test of decoding 100% of CBOR common appendix test strings.
