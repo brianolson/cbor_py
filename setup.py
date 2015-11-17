@@ -55,7 +55,7 @@ class optional_build_ext(build_ext):
 
 setup_options = dict(
     name='cbor',
-    version='0.1.21',
+    version='0.1.22',
     description='RFC 7049 - Concise Binary Object Representation',
     long_description="""
 An implementation of RFC 7049 - Concise Binary Object Representation (CBOR).
