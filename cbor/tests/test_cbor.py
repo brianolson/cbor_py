@@ -46,8 +46,8 @@ class TestRoot(object):
     def loads(cls, *args):
         return cls._ld[0](*args)
     @classmethod
-    def dumps(cls, *args):
-        return cls._ld[1](*args)
+    def dumps(cls, *args, **kwargs):
+        return cls._ld[1](*args, **kwargs)
     @classmethod
     def speediterations(cls):
         return cls._ld[2]
@@ -55,8 +55,8 @@ class TestRoot(object):
     def load(cls, *args):
         return cls._ld[3](*args)
     @classmethod
-    def dump(cls, *args):
-        return cls._ld[4](*args)
+    def dump(cls, *args, **kwargs):
+        return cls._ld[4](*args, **kwargs)
     @classmethod
     def testable(cls):
         ok = (cls._ld[0] is not None) and (cls._ld[1] is not None) and (cls._ld[3] is not None) and (cls._ld[4] is not None)
@@ -267,6 +267,63 @@ class XTestCBOR(object):
         except Exception as ex:
             logger.info('unexpected error!', exc_info=True)
             assert False, 'unexpected error' + str(ex)
+
+    def test_sortkeys(self):
+        if not self.testable(): return
+        obytes = []
+        xbytes = []
+        for n in _range(2, 27):
+            ob = {u'{:02x}'.format(x):x for x in _range(n)}
+            obytes.append(self.dumps(ob, sort_keys=True))
+            xbytes.append(self.dumps(ob, sort_keys=False))
+        allOGood = True
+        someXMiss = False
+        for i, g in enumerate(_GOLDEN_SORTED_KEYS_BYTES):
+            if g != obytes[i]:
+                logger.error('bad sorted result, wanted %r got %r', g, obytes[i])
+                allOGood = False
+            if g != xbytes[i]:
+                someXMiss = True
+
+        assert allOGood
+        assert someXMiss
+
+
+_GOLDEN_SORTED_KEYS_BYTES = [
+b'\xa2b00\x00b01\x01',
+b'\xa3b00\x00b01\x01b02\x02',
+b'\xa4b00\x00b01\x01b02\x02b03\x03',
+b'\xa5b00\x00b01\x01b02\x02b03\x03b04\x04',
+b'\xa6b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05',
+b'\xa7b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06',
+b'\xa8b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07',
+b'\xa9b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08',
+b'\xaab00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\t',
+b'\xabb00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\n',
+b'\xacb00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0b',
+b'\xadb00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0c',
+b'\xaeb00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\r',
+b'\xafb00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0e',
+b'\xb0b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0f',
+b'\xb1b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10',
+b'\xb2b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11',
+b'\xb3b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12',
+b'\xb4b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12b13\x13',
+b'\xb5b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12b13\x13b14\x14',
+b'\xb6b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12b13\x13b14\x14b15\x15',
+b'\xb7b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12b13\x13b14\x14b15\x15b16\x16',
+b'\xb8\x18b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12b13\x13b14\x14b15\x15b16\x16b17\x17',
+b'\xb8\x19b00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12b13\x13b14\x14b15\x15b16\x16b17\x17b18\x18\x18',
+b'\xb8\x1ab00\x00b01\x01b02\x02b03\x03b04\x04b05\x05b06\x06b07\x07b08\x08b09\tb0a\nb0b\x0bb0c\x0cb0d\rb0e\x0eb0f\x0fb10\x10b11\x11b12\x12b13\x13b14\x14b15\x15b16\x16b17\x17b18\x18\x18b19\x18\x19',
+]
+
+def gen_sorted_bytes():
+    for n in _range(2, 27):
+        sys.stdout.write(repr(cbor.dumps({u'{:02x}'.format(x):x for x in _range(n)}, sort_keys=True)) + ',\n')
+
+def gen_unsorted_bytes():
+    for n in _range(2, 27):
+        sys.stdout.write(repr(cbor.dumps({u'{:02x}'.format(x):x for x in _range(n)}, sort_keys=False)) + ',\n')
 
 
 class TestCBORPyPy(unittest.TestCase, XTestCBOR, TestPyPy):

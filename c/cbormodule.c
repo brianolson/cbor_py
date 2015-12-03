@@ -29,6 +29,10 @@
 
 #endif
 
+typedef struct {
+    unsigned int sort_keys;
+} EncodeOptions;
+
 // Hey Look! It's a polymorphic object structure in C!
 
 // read(, len): read len bytes and return in buffer, or NULL on error
@@ -995,28 +999,49 @@ static void tag_aux_out(uint8_t cbor_type, uint64_t aux, uint8_t* out, uintptr_t
     return;
 }
 
-static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp);
+static int inner_dumps(EncodeOptions *optp, PyObject* ob, uint8_t* out, uintptr_t* posp);
 
-static int dumps_dict(PyObject* ob, uint8_t* out, uintptr_t* posp) {
+static int dumps_dict(EncodeOptions *optp, PyObject* ob, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = *posp;
-    Py_ssize_t dictiter = 0;
+    Py_ssize_t dictlen = PyDict_Size(ob);
     PyObject* key;
     PyObject* val;
-    Py_ssize_t dictlen = PyDict_Size(ob);
     int err;
+
     tag_aux_out(CBOR_MAP, dictlen, out, &pos);
-    while (PyDict_Next(ob, &dictiter, &key, &val)) {
-	err = inner_dumps(key, out, &pos);
-	if (err != 0) { return err; }
-	err = inner_dumps(val, out, &pos);
-	if (err != 0) { return err; }
+
+    if (optp->sort_keys) {
+        Py_ssize_t index = 0;
+        PyObject* keylist = PyDict_Keys(ob);
+        PyList_Sort(keylist);
+
+        //fprintf(stderr, "sortking keys\n");
+        for (index = 0; index < PyList_Size(keylist); index++) {
+            key = PyList_GetItem(keylist, index); // Borrowed ref
+            val = PyDict_GetItem(ob, key); // Borrowed ref
+            err = inner_dumps(optp, key, out, &pos);
+            if (err != 0) { return err; }
+            err = inner_dumps(optp, val, out, &pos);
+            if (err != 0) { return err; }
+        }
+        Py_DECREF(keylist);
+    } else {
+        Py_ssize_t dictiter = 0;
+        //fprintf(stderr, "unsorted keys\n");
+        while (PyDict_Next(ob, &dictiter, &key, &val)) {
+            err = inner_dumps(optp, key, out, &pos);
+            if (err != 0) { return err; }
+            err = inner_dumps(optp, val, out, &pos);
+            if (err != 0) { return err; }
+        }
     }
+
     *posp = pos;
     return 0;
 }
 
 
-static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* posp) {
+static void dumps_bignum(EncodeOptions *optp, uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = (posp != NULL) ? *posp : 0;
     PyObject* eight = PyLong_FromLong(8);
     PyObject* bytemask = NULL;
@@ -1066,7 +1091,7 @@ static void dumps_bignum(uint8_t tag, PyObject* val, uint8_t* out, uintptr_t* po
     *posp = pos;
 }
 
-static int dumps_tag(PyObject* ob, uint8_t* out, uintptr_t* posp) {
+static int dumps_tag(EncodeOptions *optp, PyObject* ob, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = (posp != NULL) ? *posp : 0;
     int err = 0;
 
@@ -1084,7 +1109,7 @@ static int dumps_tag(PyObject* ob, uint8_t* out, uintptr_t* posp) {
                 long val = PyInt_AsLong(tag_num);
                 if (val > 0) {
                     tag_aux_out(CBOR_TAG, val, out, &pos);
-                    err = inner_dumps(tag_value, out, &pos);
+                    err = inner_dumps(optp, tag_value, out, &pos);
                 } else {
                     PyErr_Format(PyExc_ValueError, "tag cannot be a negative int: %ld", val);
                     err = -1;
@@ -1097,7 +1122,7 @@ static int dumps_tag(PyObject* ob, uint8_t* out, uintptr_t* posp) {
                 if (overflow == 0) {
                     if (val >= 0) {
                         tag_aux_out(CBOR_TAG, val, out, &pos);
-                        err = inner_dumps(tag_value, out, &pos);
+                        err = inner_dumps(optp, tag_value, out, &pos);
                     } else {
                         PyErr_Format(PyExc_ValueError, "tag cannot be a negative long: %lld", val);
                         err = -1;
@@ -1126,10 +1151,15 @@ static int dumps_tag(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 
 // With out=NULL it just counts the length.
 // return err, 0=OK
-static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
+static int inner_dumps(EncodeOptions *optp, PyObject* ob, uint8_t* out, uintptr_t* posp) {
     uintptr_t pos = (posp != NULL) ? *posp : 0;
 
-    if (PyBool_Check(ob)) {
+    if (ob == Py_None) {
+	if (out != NULL) {
+	    out[pos] = CBOR_NULL;
+	}
+	pos += 1;
+    } else if (PyBool_Check(ob)) {
 	if (out != NULL) {
 	    if (PyObject_IsTrue(ob)) {
 		out[pos] = CBOR_TRUE;
@@ -1138,20 +1168,15 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	    }
 	}
 	pos += 1;
-    } else if (ob == Py_None) {
-	if (out != NULL) {
-	    out[pos] = CBOR_NULL;
-	}
-	pos += 1;
     } else if (PyDict_Check(ob)) {
-	int err = dumps_dict(ob, out, &pos);
+	int err = dumps_dict(optp, ob, out, &pos);
 	if (err != 0) { return err; }
     } else if (PyList_Check(ob)) {
         Py_ssize_t i;
 	Py_ssize_t listlen = PyList_Size(ob);
 	tag_aux_out(CBOR_ARRAY, listlen, out, &pos);
 	for (i = 0; i < listlen; i++) {
-	    int err = inner_dumps(PyList_GetItem(ob, i), out, &pos);
+	    int err = inner_dumps(optp, PyList_GetItem(ob, i), out, &pos);
 	    if (err != 0) { return err; }
 	}
     } else if (PyTuple_Check(ob)) {
@@ -1159,7 +1184,7 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	Py_ssize_t listlen = PyTuple_Size(ob);
 	tag_aux_out(CBOR_ARRAY, listlen, out, &pos);
 	for (i = 0; i < listlen; i++) {
-	    int err = inner_dumps(PyTuple_GetItem(ob, i), out, &pos);
+	    int err = inner_dumps(optp, PyTuple_GetItem(ob, i), out, &pos);
 	    if (err != 0) { return err; }
 	}
 	// TODO: accept other enumerables and emit a variable length array
@@ -1188,11 +1213,11 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 		PyObject* minusone = PyLong_FromLongLong(-1L);
 		PyObject* val = PyNumber_Subtract(minusone, ob);
 		Py_DECREF(minusone);
-		dumps_bignum(CBOR_TAG_NEGBIGNUM, val, out, &pos);
+		dumps_bignum(optp, CBOR_TAG_NEGBIGNUM, val, out, &pos);
 		Py_DECREF(val);
 	    } else {
 		// BIG INT
-		dumps_bignum(CBOR_TAG_BIGNUM, ob, out, &pos);
+		dumps_bignum(optp, CBOR_TAG_BIGNUM, ob, out, &pos);
 	    }
 	}
     } else if (PyFloat_Check(ob)) {
@@ -1219,7 +1244,7 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
         {
             PyObject* tag_class = getCborTagClass();
             if (PyObject_IsInstance(ob, tag_class)) {
-                int err = dumps_tag(ob, out, &pos);
+                int err = dumps_tag(optp, ob, out, &pos);
                 if (err != 0) { return err; }
                 handled = 1;
             }
@@ -1247,9 +1272,27 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
     return 0;
 }
 
+static int _dumps_kwargs(EncodeOptions *optp, PyObject* kwargs) {
+    if (kwargs == NULL) {
+    } else if (!PyDict_Check(kwargs)) {
+	PyErr_Format(PyExc_ValueError, "kwargs not dict: %R\n", kwargs);
+	return 0;
+    } else {
+	PyObject* sort_keys = PyDict_GetItemString(kwargs, "sort_keys");  // Borrowed ref
+	if (sort_keys != NULL) {
+            optp->sort_keys = PyObject_IsTrue(sort_keys);
+            //fprintf(stderr, "sort_keys=%d\n", optp->sort_keys);
+	}
+    }
+    return 1;
+}
+
 static PyObject*
-cbor_dumps(PyObject* noself, PyObject* args) {
+cbor_dumps(PyObject* noself, PyObject* args, PyObject* kwargs) {
+
     PyObject* ob;
+    EncodeOptions opts = {0};
+    EncodeOptions *optp = &opts;
     is_big_endian();
     if (PyType_IsSubtype(Py_TYPE(args), &PyList_Type)) {
 	ob = PyList_GetItem(args, 0);
@@ -1258,6 +1301,13 @@ cbor_dumps(PyObject* noself, PyObject* args) {
     } else {
 	PyErr_Format(PyExc_ValueError, "args not list or tuple: %R\n", args);
 	return NULL;
+    }
+    if (ob == NULL) {
+        return NULL;
+    }
+
+    if (!_dumps_kwargs(optp, kwargs)) {
+        return NULL;
     }
 
     {
@@ -1268,7 +1318,7 @@ cbor_dumps(PyObject* noself, PyObject* args) {
 	int err;
 
 	// first pass just to count length
-	err = inner_dumps(ob, NULL, &pos);
+	err = inner_dumps(optp, ob, NULL, &pos);
 	if (err != 0) {
 	    return NULL;
 	}
@@ -1281,7 +1331,7 @@ cbor_dumps(PyObject* noself, PyObject* args) {
 	    return NULL;
 	}
 
-	err = inner_dumps(ob, out, NULL);
+	err = inner_dumps(optp, ob, out, NULL);
 	if (err != 0) {
 	    PyMem_Free(out);
 	    return NULL;
@@ -1295,10 +1345,12 @@ cbor_dumps(PyObject* noself, PyObject* args) {
 }
 
 static PyObject*
-cbor_dump(PyObject* noself, PyObject* args) {
+cbor_dump(PyObject* noself, PyObject* args, PyObject *kwargs) {
     // args should be (obj, fp)
     PyObject* ob;
     PyObject* fp;
+    EncodeOptions opts = {0};
+    EncodeOptions *optp = &opts;
 
     is_big_endian();
     if (PyType_IsSubtype(Py_TYPE(args), &PyList_Type)) {
@@ -1311,6 +1363,13 @@ cbor_dump(PyObject* noself, PyObject* args) {
 	PyErr_Format(PyExc_ValueError, "args not list or tuple: %R\n", args);
 	return NULL;
     }
+    if ((ob == NULL) || (fp == NULL)) {
+        return NULL;
+    }
+
+    if (!_dumps_kwargs(optp, kwargs)) {
+        return NULL;
+    }
 
     {
 	// TODO: make this smarter, right now it is justt fp.write(dumps(ob))
@@ -1320,7 +1379,7 @@ cbor_dump(PyObject* noself, PyObject* args) {
 	int err;
 
 	// first pass just to count length
-	err = inner_dumps(ob, NULL, &pos);
+	err = inner_dumps(optp, ob, NULL, &pos);
 	if (err != 0) {
 	    return NULL;
 	}
@@ -1333,7 +1392,7 @@ cbor_dump(PyObject* noself, PyObject* args) {
 	    return NULL;
 	}
 
-	err = inner_dumps(ob, out, NULL);
+	err = inner_dumps(optp, ob, out, NULL);
 	if (err != 0) {
 	    PyMem_Free(out);
 	    return NULL;
@@ -1377,12 +1436,12 @@ cbor_dump(PyObject* noself, PyObject* args) {
 static PyMethodDef CborMethods[] = {
     {"loads",  cbor_loads, METH_VARARGS,
         "parse cbor from data buffer to objects"},
-    {"dumps", cbor_dumps, METH_VARARGS,
+    {"dumps", (PyCFunction)cbor_dumps, METH_VARARGS|METH_KEYWORDS,
         "serialize python object to bytes"},
     {"load",  cbor_load, METH_VARARGS,
      "Parse cbor from data buffer to objects.\n"
      "Takes a file-like object capable of .read(N)\n"},
-    {"dump", cbor_dump, METH_VARARGS,
+    {"dump", (PyCFunction)cbor_dump, METH_VARARGS|METH_KEYWORDS,
      "Serialize python object to bytes.\n"
      "dump(obj, fp)\n"
      "obj: object to output; fp: file-like object to .write() to\n"},

@@ -149,27 +149,39 @@ def dumps_string(val, is_text=None, is_bytes=None):
     return _encode_type_num(CBOR_TEXT, len(val)) + val
 
 
-def dumps_array(arr):
+def dumps_array(arr, sort_keys=False):
     head = _encode_type_num(CBOR_ARRAY, len(arr))
-    parts = [dumps(x) for x in arr]
+    parts = [dumps(x, sort_keys=sort_keys) for x in arr]
     return head + b''.join(parts)
 
 
 if _IS_PY3:
-    def dumps_dict(d):
+    def dumps_dict(d, sort_keys=False):
         head = _encode_type_num(CBOR_MAP, len(d))
         parts = [head]
-        for k,v in d.items():
-            parts.append(dumps(k))
-            parts.append(dumps(v))
+        if sort_keys:
+            for k in sorted(d.keys()):
+                v = d[k]
+                parts.append(dumps(k, sort_keys=sort_keys))
+                parts.append(dumps(v, sort_keys=sort_keys))
+        else:
+            for k,v in d.items():
+                parts.append(dumps(k, sort_keys=sort_keys))
+                parts.append(dumps(v, sort_keys=sort_keys))
         return b''.join(parts)
 else:
-    def dumps_dict(d):
+    def dumps_dict(d, sort_keys=False):
         head = _encode_type_num(CBOR_MAP, len(d))
         parts = [head]
-        for k,v in d.iteritems():
-            parts.append(dumps(k))
-            parts.append(dumps(v))
+        if sort_keys:
+            for k in sorted(d.iterkeys()):
+                v = d[k]
+                parts.append(dumps(k, sort_keys=sort_keys))
+                parts.append(dumps(v, sort_keys=sort_keys))
+        else:
+            for k,v in d.iteritems():
+                parts.append(dumps(k, sort_keys=sort_keys))
+                parts.append(dumps(v, sort_keys=sort_keys))
         return b''.join(parts)
 
 
@@ -179,8 +191,8 @@ def dumps_bool(b):
     return struct.pack('B', CBOR_FALSE)
 
 
-def dumps_tag(t):
-    return _encode_type_num(CBOR_TAG, t.tag) + dumps(t.value)
+def dumps_tag(t, sort_keys=False):
+    return _encode_type_num(CBOR_TAG, t.tag) + dumps(t.value, sort_keys=sort_keys)
     
 
 if _IS_PY3:
@@ -195,7 +207,7 @@ else:
         return isinstance(x, (int, long))
 
 
-def dumps(ob):
+def dumps(ob, sort_keys=False):
     if ob is None:
         return struct.pack('B', CBOR_NULL)
     if isinstance(ob, bool):
@@ -203,28 +215,28 @@ def dumps(ob):
     if _is_stringish(ob):
         return dumps_string(ob)
     if isinstance(ob, (list, tuple)):
-        return dumps_array(ob)
+        return dumps_array(ob, sort_keys=sort_keys)
     # TODO: accept other enumerables and emit a variable length array
     if isinstance(ob, dict):
-        return dumps_dict(ob)
+        return dumps_dict(ob, sort_keys=sort_keys)
     if isinstance(ob, float):
         return dumps_float(ob)
     if _is_intish(ob):
         return dumps_int(ob)
     if isinstance(ob, Tag):
-        return dumps_tag(ob)
+        return dumps_tag(ob, sort_keys=sort_keys)
     raise Exception("don't know how to cbor serialize object of type %s", type(ob))
 
 
 # same basic signature as json.dump, but with no options (yet)
-def dump(obj, fp):
+def dump(obj, fp, sort_keys=False):
     """
     obj: Python object to serialize
     fp: file-like object capable of .write(bytes)
     """
     # this is kinda lame, but probably not inefficient for non-huge objects
     # TODO: .write() to fp as we go as each inner object is serialized
-    blob = dumps(obj)
+    blob = dumps(obj, sort_keys=sort_keys)
     fp.write(blob)
 
 
