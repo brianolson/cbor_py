@@ -13,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Thanks!
+# to Mic Bowman for a bunch of work and impetus on dumps(,sort_keys=)
+
 from distutils.command.build_ext import build_ext
 from distutils.errors import (CCompilerError, DistutilsExecError,
     DistutilsPlatformError)
