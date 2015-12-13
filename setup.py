@@ -56,9 +56,12 @@ class optional_build_ext(build_ext):
             raise
 
 
+VERSION = eval(open('cbor/VERSION.py','rb').read())
+
+
 setup_options = dict(
     name='cbor',
-    version='0.1.23',
+    version=VERSION,
     description='RFC 7049 - Concise Binary Object Representation',
     long_description="""
 An implementation of RFC 7049 - Concise Binary Object Representation (CBOR).
