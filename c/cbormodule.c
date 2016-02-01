@@ -453,8 +453,11 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
         PyErr_Format(PyExc_RuntimeError, "unknown cbor marker %02x", c);
         return NULL;
     }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunreachable-code"
     PyErr_SetString(PyExc_RuntimeError, "cbor library internal error moof!");
     return NULL;
+#pragma GCC diagnostic pop
 }
 
 static int loads_kv(PyObject* out, Reader* rin) {
@@ -531,8 +534,11 @@ static PyObject* loads_tag(Reader* rin, uint64_t aux) {
 	    PyErr_Format(PyExc_ValueError, "TAG BIGNUM not followed by bytes but %02x", sc);
 	    return NULL;
 	}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunreachable-code"
 	PyErr_Format(PyExc_ValueError, "TODO: WRITEME CBOR TAG BIGNUM %02x ...\n", sc);
 	return NULL;
+#pragma GCC diagnostic pop
     } else if (aux == CBOR_TAG_NEGBIGNUM) {
 	// If the next object is bytes, interpret it here without making a PyObject for it.
 	uint8_t sc;
@@ -550,8 +556,11 @@ static PyObject* loads_tag(Reader* rin, uint64_t aux) {
 	    PyErr_Format(PyExc_ValueError, "TAG NEGBIGNUM not followed by bytes but %02x", sc);
 	    return NULL;
 	}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunreachable-code"
 	PyErr_Format(PyExc_ValueError, "TODO: WRITEME CBOR TAG NEGBIGNUM %02x ...\n", sc);
 	return NULL;
+#pragma GCC diagnostic pop
     }
     out = inner_loads(rin);
     if (out == NULL) { return NULL; }
@@ -1468,7 +1477,11 @@ PyInit__cbor(void)
     modef.m_doc = NULL;
     modef.m_size = 0;
     modef.m_methods = CborMethods;
-    modef.m_reload = NULL;
+#ifdef Py_mod_exec
+    modef.m_slots = NULL; // Py >= 3.5
+#else
+    modef.m_reload = NULL; // Py < 3.5
+#endif
     modef.m_traverse = NULL;
     modef.m_clear = NULL;
     modef.m_free = NULL;
