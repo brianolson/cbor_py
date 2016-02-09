@@ -1116,7 +1116,7 @@ static int dumps_tag(EncodeOptions *optp, PyObject* ob, uint8_t* out, uintptr_t*
 #ifdef Py_INTOBJECT_H
             if (PyInt_Check(tag_num)) {
                 long val = PyInt_AsLong(tag_num);
-                if (val > 0) {
+                if (val >= 0) {
                     tag_aux_out(CBOR_TAG, val, out, &pos);
                     err = inner_dumps(optp, tag_value, out, &pos);
                 } else {

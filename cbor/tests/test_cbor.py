@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import base64
+import datetime
 import json
 import logging
 import random
@@ -267,6 +268,12 @@ class XTestCBOR(object):
         except Exception as ex:
             logger.info('unexpected error!', exc_info=True)
             assert False, 'unexpected error' + str(ex)
+
+    def test_datetime(self):
+        if not self.testable(): return
+        # right now we're just testing that it's possible to dumps()
+        # Tag(0,...) because there was a bug around that.
+        xb = self.dumps(Tag(0, datetime.datetime(1984,1,24,23,22,21).isoformat()))
 
     def test_sortkeys(self):
         if not self.testable(): return
