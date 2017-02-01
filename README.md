@@ -22,3 +22,8 @@ Tested in Python 2.7.5, 2,7.6, 3.3.3, 3.4.0, and 3.5.2
 Available on pypi:
 
 pip install cbor
+
+---
+
+For Go implementation, see:
+https://github.com/brianolson/cbor_go
