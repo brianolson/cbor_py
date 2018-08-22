@@ -214,7 +214,8 @@ else:
 
 
 class VarList(list):
-    pass
+    def __repr__(self):
+        return 'VarList(%s)' % list.__repr__(self)
 
 
 def dumps(ob, sort_keys=False):
