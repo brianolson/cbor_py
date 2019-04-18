@@ -260,6 +260,8 @@ def loads(data):
     """
     if data is None:
         raise ValueError("got None for buffer to decode in loads")
+    elif data == b'':
+        raise ValueError("got zero length string loads")
     fp = StringIO(data)
     return _loads(fp)[0]
 
