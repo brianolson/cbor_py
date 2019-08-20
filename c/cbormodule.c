@@ -703,7 +703,7 @@ typedef struct _ObjectReader {
     READER_FUNCTIONS;
     PyObject* ob;
 
-    // We got one object with all the bytes neccessary, and need to
+    // We got one object with all the bytes necessary, and need to
     // DECREF it later.
     PyObject* retval;
     void* bytes;

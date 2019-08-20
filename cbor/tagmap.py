@@ -11,7 +11,7 @@ from .cbor import Tag, CBOR_TAG_CBOR, _IS_PY3
 class ClassTag(object):
     '''
     For some CBOR tag_number, encode/decode Python class_type.
-    class_type manily used for isintance(foo, class_type)
+    class_type mainly used for isinstance(foo, class_type)
     Call encode_function() taking a Python instance and returning CBOR primitive types.
     Call decode_function() on CBOR primitive types and return an instance of the Python class_type (a factory function).
     '''
@@ -108,7 +108,7 @@ class TagMapper(object):
 class WrappedCBOR(ClassTag):
     """Handles Tag 24, where a byte array is sub encoded CBOR.
     Unpacks sub encoded object on finding such a tag.
-    Does not convert anyting into such a tag.
+    Does not convert anything into such a tag.
 
     Usage:
 >>> import cbor
