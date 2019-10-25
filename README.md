@@ -1,7 +1,7 @@
 Concise Binary Object Representation (CBOR) is a superset of JSON's schema that's faster and more compact.
 
-* http://tools.ietf.org/html/rfc7049
-* http://cbor.io/
+* https://tools.ietf.org/html/rfc7049
+* https://cbor.io/
 
 This Python implementation provides loads()/dumps() like the json standard library.
 
