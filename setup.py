@@ -74,7 +74,7 @@ This library includes a C implementation which runs 3-5 times faster than the Py
 """,
     author='Brian Olson',
     author_email='bolson@bolson.org',
-    url='https://bitbucket.org/bodhisnarkva/cbor',
+    url='https://github.com/brianolson/cbor_py',
     packages=['cbor'],
     package_dir={'cbor':'cbor'},
     ext_modules=[
