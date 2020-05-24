@@ -70,7 +70,7 @@ CBOR is comparable to JSON, has a superset of JSON's ability, but serializes to 
 
 The two primary functions are cbor.loads() and cbor.dumps().
 
-This library includes a C implementation which runs 3-5 times faster than the Python standard library's C-accelerated implementanion of JSON. This is also includes a 100% Python implementation.
+This library includes a C implementation which runs 3-5 times faster than the Python standard library's C-accelerated implementation of JSON. This is also includes a 100% Python implementation.
 """,
     author='Brian Olson',
     author_email='bolson@bolson.org',
@@ -87,7 +87,7 @@ This library includes a C implementation which runs 3-5 times faster than the Py
     ],
     license='Apache',
     classifiers=[
-	'Development Status :: 5 - Production/Stable',
+        'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',

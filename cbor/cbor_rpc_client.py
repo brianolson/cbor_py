@@ -172,4 +172,3 @@ if __name__ == '__main__':
     #print(client._rpc(u'ping', []))
     #print(client._rpc(u'gnip', []))
     client.close()
-        
