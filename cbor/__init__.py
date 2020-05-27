@@ -7,7 +7,7 @@ except:
     # fall back to 100% python implementation
     from .cbor import loads, dumps, load, dump
 
-from .cbor import Tag
+from .cbor import Tag, VarList
 from .tagmap import TagMapper, ClassTag, UnknownTagException
 from .VERSION import __doc__ as __version__
 

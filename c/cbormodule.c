@@ -60,6 +60,8 @@ static Reader* NewObjectReader(PyObject* ob);
 static Reader* NewFileReader(PyObject* ob);
 #endif
 
+// cache global VarList class object.
+static PyObject* g_varlist_class = NULL;
 
 static PyObject* loads_tag(Reader* rin, uint64_t aux);
 static int loads_kv(PyObject* out, Reader* rin);
@@ -368,7 +370,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
     case CBOR_ARRAY:
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
 	    uint8_t sc;
-	    out = PyList_New(0);
+        out = PyObject_CallObject(g_varlist_class, NULL);
 	    if (rin->read1(rin, &sc)) { logprintf("r1 fail in var array tag\n"); return NULL; }
 	    while (sc != CBOR_BREAK) {
 		PyObject* subitem = inner_loads_c(rin, sc);
@@ -520,6 +522,21 @@ static PyObject* getCborTagClass(void) {
     return tag_class;
 }
 
+// returns a PyObject for cbor.cbor.VarList
+// Returned PyObject* is a BORROWED reference from the module dict
+static PyObject* getCborVarListClass(void) {
+    PyObject* cbor_module = PyImport_ImportModule("cbor.cbor");
+    PyObject* moddict = PyModule_GetDict(cbor_module);
+    PyObject* tag_class = PyDict_GetItemString(moddict, "VarList");
+    // moddict and tag_class are 'borrowed reference'
+    Py_DECREF(cbor_module);
+
+    return tag_class;
+}
+
+static int VarList_Check(PyObject* o) {
+    return PyObject_IsInstance(o, g_varlist_class);
+}
 
 static PyObject* loads_tag(Reader* rin, uint64_t aux) {
     PyObject* out = NULL;
@@ -1180,6 +1197,18 @@ static int inner_dumps(EncodeOptions *optp, PyObject* ob, uint8_t* out, uintptr_
     } else if (PyDict_Check(ob)) {
 	int err = dumps_dict(optp, ob, out, &pos);
 	if (err != 0) { return err; }
+    } else if (VarList_Check(ob)) {
+        Py_ssize_t i;
+	if (out != NULL) {
+	    out[pos] = CBOR_ARRAY | CBOR_VAR_FOLLOWS;
+	}
+    pos++;
+	Py_ssize_t listlen = PyList_Size(ob);
+	for (i = 0; i < listlen; i++) {
+	    int err = inner_dumps(optp, PyList_GetItem(ob, i), out, &pos);
+	    if (err != 0) { return err; }
+	}
+    tag_aux_out(CBOR_BREAK, 0, out, &pos);
     } else if (PyList_Check(ob)) {
         Py_ssize_t i;
 	Py_ssize_t listlen = PyList_Size(ob);
@@ -1462,6 +1491,8 @@ static PyMethodDef CborMethods[] = {
 PyMODINIT_FUNC
 init_cbor(void)
 {
+    g_varlist_class = getCborVarListClass();
+
     (void) Py_InitModule("cbor._cbor", CborMethods);
 }
 #else
@@ -1469,6 +1500,8 @@ init_cbor(void)
 PyMODINIT_FUNC
 PyInit__cbor(void)
 {
+    g_varlist_class = getCborVarListClass();
+
     static PyModuleDef modef = {
 	PyModuleDef_HEAD_INIT,
     };

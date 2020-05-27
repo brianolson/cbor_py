@@ -155,6 +155,12 @@ def dumps_array(arr, sort_keys=False):
     return head + b''.join(parts)
 
 
+def dumps_var_array(arr, sort_keys=False):
+    head = struct.pack('B', CBOR_ARRAY | CBOR_VAR_FOLLOWS)
+    parts = [dumps(x, sort_keys=sort_keys) for x in arr]
+    return head + b''.join(parts) + bytes([CBOR_BREAK])
+
+
 if _IS_PY3:
     def dumps_dict(d, sort_keys=False):
         head = _encode_type_num(CBOR_MAP, len(d))
@@ -207,6 +213,11 @@ else:
         return isinstance(x, (int, long))
 
 
+class VarList(list):
+    def __repr__(self):
+        return 'VarList(%s)' % list.__repr__(self)
+
+
 def dumps(ob, sort_keys=False):
     if ob is None:
         return struct.pack('B', CBOR_NULL)
@@ -214,6 +225,8 @@ def dumps(ob, sort_keys=False):
         return dumps_bool(ob)
     if _is_stringish(ob):
         return dumps_string(ob)
+    if isinstance(ob, VarList):
+        return dumps_var_array(ob, sort_keys=sort_keys)
     if isinstance(ob, (list, tuple)):
         return dumps_array(ob, sort_keys=sort_keys)
     # TODO: accept other enumerables and emit a variable length array
@@ -312,7 +325,7 @@ def _read_byte(fp):
 
 
 def _loads_var_array(fp, limit, depth, returntags, bytes_read):
-    ob = []
+    ob = VarList()
     tb = _read_byte(fp)
     while tb != CBOR_BREAK:
         (subob, sub_len) = _loads_tb(fp, tb, limit, depth, returntags)
