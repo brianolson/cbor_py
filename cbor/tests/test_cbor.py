@@ -281,6 +281,10 @@ class XTestCBOR(object):
         xbytes = []
         for n in _range(2, 27):
             ob = {u'{:02x}'.format(x):x for x in _range(n)}
+            # ensure some "ob" have unsorted key:value entries
+            if n in [4, 6, 9]:
+                ob.pop('01')
+                ob["01"] = 1
             obytes.append(self.dumps(ob, sort_keys=True))
             xbytes.append(self.dumps(ob, sort_keys=False))
         allOGood = True
