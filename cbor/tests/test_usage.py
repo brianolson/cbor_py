@@ -22,7 +22,7 @@ try:
     from cbor._cbor import load as cload
 except ImportError:
     # still test what we can without C fast mode
-    logger.warn('testing without C accelerated CBOR', exc_info=True)
+    logger.warning('testing without C accelerated CBOR', exc_info=True)
     cdumps, cloads, cdump, cload = None, None, None, None
 
 
@@ -48,7 +48,7 @@ class TestUsage(unittest.TestCase):
         repeatedly serialize, check that usage doesn't go up
         '''
         if cdumps is None:
-            logger.warn('no C dumps(), skipping test_dumps_usage')
+            logger.warning('no C dumps(), skipping test_dumps_usage')
             return
         start_usage = resource.getrusage(resource.RUSAGE_SELF)
         usage_history = [start_usage]
@@ -76,7 +76,7 @@ class TestUsage(unittest.TestCase):
         repeatedly serialize, check that usage doesn't go up
         '''
         if (cdumps is None) or (cloads is None):
-            logger.warn('no C fast CBOR, skipping test_loads_usage')
+            logger.warning('no C fast CBOR, skipping test_loads_usage')
             return
         ## Just a string passes!
         #ob = 'sntaoheusnatoheusnaotehuasnoetuhaosentuhaoesnth'
@@ -113,7 +113,7 @@ class TestUsage(unittest.TestCase):
         it, checking usage all along the way.
         '''
         if cdump is None:
-            logger.warn('no C dump(), skipping test_tempfile')
+            logger.warning('no C dump(), skipping test_tempfile')
             return
         with tempfile.NamedTemporaryFile() as ntf:
             # first, write a bunch to temp file
@@ -168,7 +168,7 @@ class TestUsage(unittest.TestCase):
     def test_stringio_usage(self):
         '''serialize data to StringIO, read it back'''
         if cdump is None:
-            logger.warn('no C dump(), skipping test_tempfile')
+            logger.warning('no C dump(), skipping test_tempfile')
             return
 
         # warmup the rusage, allocate everything!
