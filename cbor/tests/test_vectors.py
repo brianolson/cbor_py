@@ -27,7 +27,7 @@ try:
     from cbor._cbor import loads as cloads
 except ImportError:
     # still test what we can without C fast mode
-    logger.warn('testing without C accelerated CBOR', exc_info=True)
+    logger.warning('testing without C accelerated CBOR', exc_info=True)
     #cdumps, cloads = None, None
     cloads = None
 from cbor import Tag

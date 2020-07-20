@@ -91,7 +91,7 @@ class CborRpcClient(object):
                 self._socket.shutdown(socket.SHUT_RDWR)
                 self._socket.close()
             except socket.error:
-                logger.warn('error closing lockd client socket',
+                logger.warning('error closing lockd client socket',
                             exc_info=True)
             self._socket = None
 
@@ -172,4 +172,4 @@ if __name__ == '__main__':
     #print(client._rpc(u'ping', []))
     #print(client._rpc(u'gnip', []))
     client.close()
-        
+

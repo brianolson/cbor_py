@@ -27,7 +27,7 @@ try:
     from cbor._cbor import load as cload
 except ImportError:
     # still test what we can without C fast mode
-    logger.warn('testing without C accelerated CBOR', exc_info=True)
+    logger.warning('testing without C accelerated CBOR', exc_info=True)
     cdumps, cloads, cdump, cload = None, None, None, None
 
 
@@ -62,7 +62,7 @@ class TestRoot(object):
     def testable(cls):
         ok = (cls._ld[0] is not None) and (cls._ld[1] is not None) and (cls._ld[3] is not None) and (cls._ld[4] is not None)
         if not ok:
-            logger.warn('non-testable case %s skipped', cls.__name__)
+            logger.warning('non-testable case %s skipped', cls.__name__)
         return ok
 
 # Can't set class level function pointers, because then they expect a
