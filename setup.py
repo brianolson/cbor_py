@@ -16,12 +16,12 @@
 # Thanks!
 # to Mic Bowman for a bunch of work and impetus on dumps(,sort_keys=)
 
+from setuptools import setup, Extension
+
 from distutils.command.build_ext import build_ext
 from distutils.errors import (CCompilerError, DistutilsExecError,
     DistutilsPlatformError)
 import sys
-
-from setuptools import setup, Extension
 
 
 build_errors = (CCompilerError, DistutilsExecError, DistutilsPlatformError)
