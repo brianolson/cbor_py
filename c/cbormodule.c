@@ -63,6 +63,7 @@ static Reader* NewFileReader(PyObject* ob);
 
 static PyObject* loads_tag(Reader* rin, uint64_t aux);
 static int loads_kv(PyObject* out, Reader* rin);
+static PyObject* getCborClass(const char* name);
 
 typedef struct VarBufferPart {
     void* start;
@@ -444,6 +445,10 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
             // js `undefined`, closest is py None
 	    out = Py_None;
 	    Py_INCREF(out);
+	} else if ((cbor_info < 20) || ((cbor_info == CBOR_UINT8_FOLLOWS) && (aux >= 32))) {
+	    // unassigned simple value, return cbor.cbor.Simple(aux)
+	    PyObject* simple_class = getCborClass("Simple");
+	    return PyObject_CallFunction(simple_class, "K", (unsigned long long)aux);
 	}
         if (out == NULL) {
             PyErr_Format(PyExc_ValueError, "unknown section 7 marker %02x, aux=%llu", c, aux);
@@ -508,16 +513,22 @@ static PyObject* loads_bignum(Reader* rin, uint8_t c) {
 }
 
 
+// returns a PyObject for a class in cbor.cbor, e.g. "Tag" or "Simple"
+// Returned PyObject* is a BORROWED reference from the module dict
+static PyObject* getCborClass(const char* name) {
+    PyObject* cbor_module = PyImport_ImportModule("cbor.cbor");
+    PyObject* moddict = PyModule_GetDict(cbor_module);
+    PyObject* cls = PyDict_GetItemString(moddict, name);
+    // moddict and cls are 'borrowed reference'
+    Py_DECREF(cbor_module);
+
+    return cls;
+}
+
 // returns a PyObject for cbor.cbor.Tag
 // Returned PyObject* is a BORROWED reference from the module dict
 static PyObject* getCborTagClass(void) {
-    PyObject* cbor_module = PyImport_ImportModule("cbor.cbor");
-    PyObject* moddict = PyModule_GetDict(cbor_module);
-    PyObject* tag_class = PyDict_GetItemString(moddict, "Tag");
-    // moddict and tag_class are 'borrowed reference'
-    Py_DECREF(cbor_module);
-
-    return tag_class;
+    return getCborClass("Tag");
 }
 
 

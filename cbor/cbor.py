@@ -254,6 +254,26 @@ class Tag(object):
         return (self.tag == other.tag) and (self.value == other.value)
 
 
+class Simple(object):
+    "An unassigned CBOR simple value (major type 7), 0..19 or 32..255"
+    def __init__(self, value=None):
+        self.value = value
+
+    def __repr__(self):
+        return "Simple({0!r})".format(self.value)
+
+    def __eq__(self, other):
+        if not isinstance(other, Simple):
+            return False
+        return self.value == other.value
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash((Simple, self.value))
+
+
 def loads(data):
     """
     Parse CBOR bytes and return Python objects.
@@ -448,6 +468,9 @@ def _loads_tb(fp, tb, limit=None, depth=0, returntags=False):
             return (None, bytes_read)
         if tb == CBOR_UNDEFINED:
             return (None, bytes_read)
+        if (tag_aux < 20) or ((tag_aux == CBOR_UINT8_FOLLOWS) and (aux >= 32)):
+            # unassigned simple value
+            return (Simple(aux), bytes_read)
         raise ValueError("unknown cbor tag 7 byte: {:02x}".format(tb))
 
 

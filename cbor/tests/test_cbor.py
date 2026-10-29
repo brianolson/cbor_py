@@ -20,6 +20,7 @@ from cbor.cbor import loads as pyloads
 from cbor.cbor import dump as pydump
 from cbor.cbor import load as pyload
 from cbor.cbor import Tag
+from cbor.cbor import Simple
 try:
     from cbor._cbor import dumps as cdumps
     from cbor._cbor import loads as cloads
@@ -268,6 +269,20 @@ class XTestCBOR(object):
         except Exception as ex:
             logger.info('unexpected error!', exc_info=True)
             assert False, 'unexpected error' + str(ex)
+
+    def test_unassigned_simple_values(self):
+        if not self.testable(): return
+        for data, value in [(b'\xe0', 0), (b'\xe6', 6), (b'\xf3', 19),
+                            (b'\xf8\x20', 32), (b'\xf8\xff', 255)]:
+            ob = self.loads(data)
+            assert ob == Simple(value), '%r != Simple(%r) from %s' % (ob, value, hexstr(data))
+        # two byte simple values below 32 are not well-formed
+        for data in (b'\xf8\x00', b'\xf8\x1f'):
+            try:
+                ob = self.loads(data)
+                assert False, 'expected ValueError for %s, got %r' % (hexstr(data), ob)
+            except ValueError:
+                pass
 
     def test_datetime(self):
         if not self.testable(): return

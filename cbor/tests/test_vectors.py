@@ -30,7 +30,7 @@ except ImportError:
     logger.warn('testing without C accelerated CBOR', exc_info=True)
     #cdumps, cloads = None, None
     cloads = None
-from cbor import Tag
+from cbor import Tag, Simple
 
 
 # Accomodate several test vectors that have diagnostic descriptors but not JSON
@@ -47,12 +47,14 @@ _DIAGNOSTIC_TESTS = {
     "(_ h'0102', h'030405')": lambda x: x == b'\x01\x02\x03\x04\x05',
     '{1: 2, 3: 4}': lambda x: x == {1: 2, 3: 4},
     "h'01020304'": lambda x: x == b'\x01\x02\x03\x04',
+    'simple(16)': lambda x: x == Simple(16),
+    'simple(255)': lambda x: x == Simple(255),
 }
 
 
-# We expect these to raise exception because they encode reserved/unused codes in the spec.
+# We expect these to raise exception because they are not well-formed (RFC 8949 section 3.3).
 # ['hex'] values of tests we expect to raise
-_EXPECT_EXCEPTION = set(['f0', 'f818', 'f8ff'])
+_EXPECT_EXCEPTION = set(['f818'])
 
 
 def _check(row, decoded):
